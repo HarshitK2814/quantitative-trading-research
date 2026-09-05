@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 
 
 def _blank_weights(index: pd.DatetimeIndex, assets) -> pd.DataFrame:
-    """An all-NaN weight frame: no rebalance on any date."""
+    """Build an all-NaN weight frame, meaning no rebalance on any date."""
     return pd.DataFrame(np.nan, index=index, columns=list(assets))
 
 
