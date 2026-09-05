@@ -209,3 +209,78 @@ as new entries. This file is part of the evidence trail.
 - `src/backtest.py`: the vectorised engine, weights → trades → costs → P&L.
 - `src/metrics.py`: Sharpe/Sortino/drawdown/turnover with stated conventions.
 - EDA notebook: correlation structure, volatility regimes, autocorrelation.
+
+---
+
+## 2026-09-05 — Week 3: backtest engine, metrics, first end-to-end run
+
+**Done**
+
+- `src/backtest.py`: vectorised long-only engine with explicit weight drift.
+- `src/metrics.py`: full metric set with every convention stated, plus
+  Newey-West HAC t-stats and a stationary-bootstrap Sharpe CI.
+- `tests/test_backtest.py` (21) and `tests/test_metrics.py` (37), checked
+  against closed-form answers rather than snapshots. **133 tests passing.**
+- First end-to-end run: benchmark portfolios on the **train period only**.
+
+**Findings**
+
+14. **Weight drift is the thing naive engines get wrong.** Between rebalances,
+    positions move with prices without any trade. Pinning weights to targets
+    daily both overstates turnover (charging to restore targets every day) and
+    misstates returns (silently harvesting a free rebalancing premium). The
+    engine tracks drifted weights and computes turnover as the distance from
+    *drifted* holdings to new targets. Verified against hand calculations:
+    50/50 with one asset +1% and the other flat gives exactly
+    0.5*1.01/1.005 and 0.5*1.00/1.005.
+
+15. **`annualised_turnover` was wrong and a test caught it.** It divided total
+    turnover by the *count* of turnover observations, treating 12 monthly
+    rebalances as 12 consecutive days — inflating monthly turnover by ~21x.
+    Turnover is a sparse series recorded only on rebalance dates; elapsed time
+    annualises it, not sample count. Fixed, with a named regression test.
+
+16. **Pipeline validated by two self-checks that could only pass if correct.**
+    SPY's beta against itself came out exactly 1.0000 with alpha -0.0001 (the
+    10bps cost), and SPY's max drawdown of -55.2% matches the actual
+    2007-2009 peak-to-trough. Neither was tuned for.
+
+17. **THE result of this session, and it is a negative one.** Over the full
+    ten-year train period, **not one benchmark reaches a Newey-West t-stat of
+    2.0**:
+
+    | Portfolio | Ann. ret | Vol | Sharpe | Max DD | t-stat (NW) |
+    |---|---|---|---|---|---|
+    | SPY buy & hold | 6.88% | 20.84% | 0.39 | -55.2% | 1.54 |
+    | Equal-weight 16 (buy & hold) | 7.19% | 15.69% | 0.48 | -41.0% | 1.77 |
+    | Equal-weight 16 (monthly) | 7.82% | 17.16% | 0.49 | -45.4% | 1.83 |
+    | 60/40 SPY-TLT (monthly) | 7.59% | 10.85% | 0.67 | -31.2% | 2.32 |
+
+    Ten years - 2,518 daily observations - and the S&P 500 itself cannot be
+    statistically distinguished from zero excess return at conventional levels.
+
+    **This calibrates everything that follows.** If a decade of the equity
+    market yields t = 1.54, then any strategy Sharpe from this project needs a
+    confidence interval attached, and the ~50-observation live paper window
+    establishes nothing whatsoever about performance. That is not modesty; it
+    is what the arithmetic says. The final report will state it in the same
+    sentence as any live result.
+
+18. **Diversification shows up exactly as theory predicts.** Equal-weight
+    across 16 ETFs cut volatility from 20.8% to 15.7% and drawdown from -55%
+    to -41% versus SPY, with a *higher* return. 60/40 did better still on
+    every risk measure. Worth remembering when judging strategy results later:
+    the bar is not SPY, it is 60/40 at Sharpe 0.67 - and bonds had an
+    exceptional decade here, which will not repeat in the 2022 test data.
+
+**Decisions**
+
+- **Benchmarks were run on train only.** They involve no fitting and no
+  selection, so running them on the full sample would not technically breach
+  the one-touch rule - but keeping the test period genuinely unread costs
+  nothing and removes any argument about it later.
+
+**Next**
+
+- `src/signals.py`: H1 cross-sectional momentum.
+- First strategy result on train, with the full cost sweep.
