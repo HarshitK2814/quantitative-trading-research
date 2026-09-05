@@ -1,0 +1,35 @@
+# Systematic Equity Trading Research & Live Paper Portfolio
+# Versions pinned to the environment the results were produced in (2026-09-05).
+# Python 3.12. See REPRODUCIBILITY.md.
+
+# --- core scientific stack ---
+numpy==2.3.5
+pandas==2.2.3
+scipy==1.16.0
+statsmodels==0.14.5
+scikit-learn==1.7.0
+arch==8.0.0
+
+# --- data access ---
+yfinance==0.2.65
+requests==2.34.2
+pyarrow==24.0.0
+python-dotenv==1.0.1
+
+# --- visualisation ---
+matplotlib==3.10.6
+seaborn==0.13.2
+
+# --- dashboard ---
+streamlit==1.50.0
+
+# --- notebooks ---
+ipykernel==7.3.0
+nbformat==5.10.4
+
+# --- testing / quality ---
+pytest==8.3.5
+ruff==0.15.1
+
+# --- pending install (week 9, live paper execution) ---
+# alpaca-py>=0.33

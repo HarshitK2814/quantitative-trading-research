@@ -1,0 +1,33 @@
+# ---- Secrets: NEVER commit ----
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+credentials.json
+secrets.yaml
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# ---- Data caches (regenerable; keep repo small) ----
+data/raw/*.parquet
+data/raw/*.csv
+data/processed/*.parquet
+!data/**/.gitkeep
+
+# ---- Local artifacts ----
+*.log
+logs/
+.DS_Store
+Thumbs.db
