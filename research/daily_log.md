@@ -150,3 +150,62 @@ as new entries. This file is part of the evidence trail.
 
 - FRED `DTB3` loader with unit-tested discount-basis → daily-simple conversion.
 - Feature layer with the one-bar shift and the shift-invariance test.
+
+---
+
+## 2026-09-05 — Week 2: risk-free rate and the look-ahead guarantee
+
+**Done**
+
+- FRED `DTB3` loader with an explicit discount-basis → bond-equivalent →
+  daily-compounded conversion chain, all three columns retained so the
+  conversion is inspectable rather than buried.
+- `src/features.py`: causal feature functions plus `make_tradable`, the single
+  choke point where the look-ahead shift is applied.
+- `tests/test_no_lookahead.py`: 31 tests, including the shift-invariance
+  invariant and meta-tests proving the detector works.
+- Lint clean, 75 tests passing.
+
+**Findings**
+
+11. **The discount-basis conversion is not cosmetic.** `DTB3` is annualised
+    over 360 days against *face value*; a simple return is earned over 365 days
+    against *purchase price*. Verified against the textbook case: a 5% discount
+    quote on a 91-day bill is a 5.134% bond-equivalent yield. Subtracting the
+    raw quote would bias every Sharpe ratio in the project. Yearly means trace
+    a recognisable history (4.46% in 2007, ZIRP 2009–2015, 5.21% peak in 2023,
+    3.73% in 2026), which is itself a sanity check on the loader.
+
+12. **The look-ahead detector was mutation-tested and has teeth.** A test that
+    always passes is worse than no test, so the detector was fed deliberately
+    non-causal features. It caught all of: centered rolling window, negative
+    shift, forward-return label, full-sample z-score, and reversed expanding
+    mean.
+
+13. **One nuance, documented rather than hidden.** `bfill()` *passed* on the
+    standard fixture. That is a correct pass, not a blind spot: with no NaNs in
+    the panel, `bfill` is a genuine no-op and there is nothing to leak. Adding
+    a hole straddling the cutoff, the detector caught it immediately (max diff
+    262.65). The general property: **shift-invariance detects leakage
+    conditional on there being a path for information to propagate.** Its power
+    therefore depends on the fixture exercising that path, so fixtures must
+    include missing values wherever the real data might. Pinned as a test.
+
+**Decisions**
+
+- **Single choke point for the shift, rather than shifting inside each feature.**
+  With N features each doing its own shifting, look-ahead safety is N things to
+  get right and to re-verify on every addition. With one choke point it is a
+  single invariant, and new features inherit it. `make_tradable` raises on
+  `lag < 1` so a zero lag cannot be configured by accident.
+- **Log returns for volatility, simple returns for performance.** Log returns
+  aggregate additively, which is the property a volatility estimator needs;
+  simple returns are what a portfolio actually earns.
+- **Holidays are forward-filled in the rate series but never in prices.** A
+  rate genuinely persists across a holiday; a filled price fabricates a return.
+
+**Next**
+
+- `src/backtest.py`: the vectorised engine, weights → trades → costs → P&L.
+- `src/metrics.py`: Sharpe/Sortino/drawdown/turnover with stated conventions.
+- EDA notebook: correlation structure, volatility regimes, autocorrelation.

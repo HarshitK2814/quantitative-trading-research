@@ -9,7 +9,6 @@ import pandas as pd
 from src.config import SPLITS, UNIVERSE
 from src.data import (
     common_history_start,
-    compare_vendors,
     load_prices,
     validate_panel,
 )

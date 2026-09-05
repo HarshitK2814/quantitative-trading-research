@@ -223,6 +223,7 @@ def assert_paper_only(base_url: str, paper_flag: str | None) -> None:
         The check is allow-list based, not deny-list based. An unrecognised
         endpoint fails closed. Matching only against known live URLs would let
         a typo or a new endpoint through.
+
     """
     if not PAPER_TRADING_ONLY:
         raise LiveTradingBlockedError(
@@ -266,6 +267,7 @@ def load_broker_config(dotenv_path: Path | None = None) -> BrokerConfig:
     Raises:
         LiveTradingBlockedError: If the configuration is not paper-only.
         RuntimeError: If credentials are missing.
+
     """
     load_dotenv(dotenv_path or (PROJECT_ROOT / ".env"), override=False)
 

@@ -27,10 +27,11 @@ import hashlib
 import io
 import json
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from pathlib import Path
-from typing import Literal, Sequence
+from typing import Literal
 
 import numpy as np
 import pandas as pd
@@ -68,6 +69,7 @@ class ValidationReport:
             threshold, as (date, ticker, return) triples.
         calendar_gaps: Consecutive dates separated by more than ``max_gap_days``.
         errors: Structural problems that make the panel unusable.
+
     """
 
     n_rows: int
@@ -153,7 +155,7 @@ def _write_manifest(
         "requested_tickers": list(tickers),
         "universe_tag": _universe_tag(tickers),
         "returned_tickers": [str(c) for c in frame.columns],
-        "retrieved_at_utc": datetime.now(timezone.utc).isoformat(),
+        "retrieved_at_utc": datetime.now(UTC).isoformat(),
         "n_rows": int(frame.shape[0]),
         "first_date": str(frame.index.min().date()) if len(frame) else None,
         "last_date": str(frame.index.max().date()) if len(frame) else None,
@@ -214,7 +216,9 @@ def _download_stooq_single(ticker: str, start: date, end: date) -> pd.Series:
 
     # Stooq signals "no data" with a plain-text body rather than an HTTP error.
     if not text or "Date" not in text.split("\n", 1)[0]:
-        raise RuntimeError(f"Stooq returned no usable data for {ticker!r}: {text[:120]!r}")
+        raise RuntimeError(
+            f"Stooq returned no usable data for {ticker!r}: {text[:120]!r}"
+        )
 
     frame = pd.read_csv(io.StringIO(text), parse_dates=["Date"])
     series = frame.set_index("Date")["Close"].sort_index()
@@ -244,6 +248,7 @@ def _download_stooq(tickers: Sequence[str], start: date, end: date) -> pd.DataFr
         Stooq's US ETF series were also split-adjusted but **not** consistently
         dividend-adjusted, so it was only ever suitable as a cross-check on
         price behaviour, never as a return source.
+
     """
     frames: list[pd.Series] = []
     failed: list[str] = []
@@ -291,6 +296,7 @@ def _download_alpaca(tickers: Sequence[str], start: date, end: date) -> pd.DataF
         shorter history. Coverage must be verified empirically for the
         requested window rather than assumed; a short overlap is still a valid
         cross-check, it is simply a cross-check over fewer days.
+
     """
     from src.config import load_broker_config
 
@@ -390,6 +396,7 @@ def verify_adjustment_consistency(
         Per-ticker frame with the number of compared days, mismatching days,
         the largest absolute return difference, and the date on which it
         occurred.
+
     """
     import yfinance as yf
 
@@ -413,7 +420,9 @@ def verify_adjustment_consistency(
 
         history.index = pd.to_datetime(history.index).tz_localize(None).normalize()
         close = history["Close"].astype(float)
-        dividends = history.get("Dividends", pd.Series(0.0, index=history.index)).fillna(0.0)
+        dividends = history.get(
+            "Dividends", pd.Series(0.0, index=history.index)
+        ).fillna(0.0)
 
         # IMPORTANT: yfinance's `auto_adjust=False` "Close" is already
         # back-adjusted for splits; only the dividend adjustment is withheld.
@@ -480,6 +489,7 @@ def load_prices(
 
     Raises:
         RuntimeError: If the vendor returns no usable data.
+
     """
     end = end or date.today()
     cache = _cache_path(vendor, start, end, tickers)
@@ -535,6 +545,7 @@ def validate_panel(
     Returns:
         A :class:`ValidationReport`. Structural problems populate ``errors``
         and set ``ok`` to False.
+
     """
     errors: list[str] = []
 
@@ -626,6 +637,7 @@ def compare_vendors(
         Per-ticker comparison indexed by ticker, with the number of overlapping
         days, count and fraction of disagreeing days, the largest absolute
         difference, and the correlation of the two return series.
+
     """
     common_tickers = [c for c in primary.columns if c in secondary.columns]
     common_dates = primary.index.intersection(secondary.index)
@@ -689,3 +701,154 @@ def common_history_start(panel: pd.DataFrame) -> pd.Timestamp:
 def annualisation_factor() -> float:
     """Return the square-root-of-time factor used throughout the project."""
     return float(np.sqrt(TRADING_DAYS_PER_YEAR))
+
+
+# ---------------------------------------------------------------------------
+# Risk-free rate
+# ---------------------------------------------------------------------------
+
+_FRED_CSV_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv"
+
+#: Days to maturity assumed for the 3-month bill. FRED's DTB3 is the 13-week
+#: bill, i.e. 91 days.
+_BILL_DAYS_TO_MATURITY: int = 91
+
+
+def discount_to_bond_equivalent(discount_rate_pct: pd.Series) -> pd.Series:
+    """Convert a bank-discount quote to a bond-equivalent (investment) yield.
+
+    FRED's ``DTB3`` is quoted **on a discount basis**, annualised over a 360-day
+    year against the bill's *face value*. A simple return is earned on the
+    *purchase price*, over a 365-day year. Subtracting the raw quoted number
+    from a strategy's returns is therefore wrong twice over, and biases every
+    Sharpe ratio in the project.
+
+    The conversion, per 100 of face value:
+
+    .. code-block:: text
+
+        P    = 100 * (1 - d * n / 360)      purchase price
+        HPR  = (100 - P) / P               return actually earned over n days
+        BEY  = HPR * 365 / n               annualised on an investment basis
+
+    Args:
+        discount_rate_pct: Quoted discount rate in **percent** (e.g. ``3.71``),
+            as published.
+
+    Returns:
+        Bond-equivalent yield as a **decimal** (e.g. ``0.0378``), indexed
+        identically to the input.
+
+    Example:
+        A 5% discount quote on a 91-day bill corresponds to a ~5.13%
+        bond-equivalent yield -- the textbook result, and the reason the
+        distinction matters.
+
+    """
+    d = discount_rate_pct.astype(float) / 100.0
+    n = _BILL_DAYS_TO_MATURITY
+    price = 1.0 - d * n / 360.0
+    holding_period_return = (1.0 - price) / price
+    return holding_period_return * 365.0 / n
+
+
+def annual_to_daily_rate(annual_rate: pd.Series) -> pd.Series:
+    """Convert an annualised rate to a per-trading-day compounded rate.
+
+    Uses geometric de-annualisation, ``(1 + r)**(1/252) - 1``, rather than the
+    linear ``r / 252``. At the rates seen in this sample the two differ by only
+    a few hundredths of a basis point per day, but the geometric form is the
+    one consistent with compounding daily returns, and stating the convention
+    is what makes a reported Sharpe ratio falsifiable.
+
+    Args:
+        annual_rate: Annualised rate as a decimal.
+
+    Returns:
+        Daily rate as a decimal.
+
+    """
+    return (1.0 + annual_rate) ** (1.0 / TRADING_DAYS_PER_YEAR) - 1.0
+
+
+def load_risk_free_rate(
+    start: date = date(2007, 1, 1),
+    end: date | None = None,
+    series_id: str = "DTB3",
+    use_cache: bool = True,
+    refresh: bool = False,
+) -> pd.DataFrame:
+    """Load the risk-free rate from FRED and convert it to a daily rate.
+
+    Args:
+        start: Inclusive start date.
+        end: Inclusive end date. Defaults to today.
+        series_id: FRED series. Defaults to ``DTB3`` (3-month T-bill, discount
+            basis, secondary market).
+        use_cache: Read the on-disk cache when present.
+        refresh: Force a re-download.
+
+    Returns:
+        DataFrame indexed by date with columns:
+        ``discount_pct`` (as published), ``bey_annual`` (bond-equivalent yield,
+        decimal), and ``rf_daily`` (per-trading-day rate, decimal).
+
+    Note:
+        FRED marks non-observation days (market holidays) with ``"."``. These
+        become NaN and are **forward-filled**, because the overnight rate does
+        persist across a holiday -- unlike a missing *price*, which must never
+        be filled. The distinction matters: filling a price fabricates a return,
+        while filling a rate reflects that the rate genuinely did not change.
+
+    """
+    end = end or date.today()
+    cache = DATA_RAW / f"riskfree_{series_id}_{start:%Y%m%d}_{end:%Y%m%d}.parquet"
+
+    if use_cache and not refresh and cache.exists():
+        logger.info("Loading cached risk-free series from %s", cache.name)
+        return pd.read_parquet(cache)
+
+    logger.info("Downloading %s from FRED [%s .. %s]", series_id, start, end)
+    response = requests.get(
+        _FRED_CSV_URL,
+        params={"id": series_id, "cosd": start.isoformat(), "coed": end.isoformat()},
+        timeout=_REQUEST_TIMEOUT_SECONDS,
+    )
+    response.raise_for_status()
+
+    raw = pd.read_csv(io.StringIO(response.text))
+    date_col = raw.columns[0]
+    frame = pd.DataFrame(
+        {"discount_pct": pd.to_numeric(raw[series_id], errors="coerce").to_numpy()},
+        index=pd.to_datetime(raw[date_col]).dt.normalize(),
+    )
+    frame.index.name = "date"
+    frame = frame.sort_index()
+
+    if frame["discount_pct"].isna().all():
+        raise RuntimeError(f"FRED returned no usable observations for {series_id!r}.")
+
+    # Holidays only; see docstring for why filling a rate is legitimate.
+    frame["discount_pct"] = frame["discount_pct"].ffill()
+    frame["bey_annual"] = discount_to_bond_equivalent(frame["discount_pct"])
+    frame["rf_daily"] = annual_to_daily_rate(frame["bey_annual"])
+
+    frame.to_parquet(cache)
+    logger.info("Cached risk-free series -> %s", cache.name)
+    return frame
+
+
+def align_risk_free(rf: pd.DataFrame, index: pd.DatetimeIndex) -> pd.Series:
+    """Align a daily risk-free series to a price panel's trading calendar.
+
+    Args:
+        rf: Output of :func:`load_risk_free_rate`.
+        index: The target trading-day index.
+
+    Returns:
+        ``rf_daily`` reindexed onto ``index``, forward-filled across any FRED
+        publication gaps, with a leading gap back-filled from the first
+        observation.
+
+    """
+    return rf["rf_daily"].reindex(index).ffill().bfill()
