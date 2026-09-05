@@ -1,0 +1,16 @@
+{
+  "vendor": "yfinance",
+  "requested_start": "2007-01-01",
+  "requested_end": "2026-09-05",
+  "requested_tickers": [
+    "TLT"
+  ],
+  "returned_tickers": [
+    "TLT"
+  ],
+  "retrieved_at_utc": "2026-09-05T13:46:20.745190+00:00",
+  "n_rows": 4950,
+  "first_date": "2007-01-03",
+  "last_date": "2026-09-04",
+  "field": "adjusted_close"
+}
