@@ -23,6 +23,7 @@ there.
 
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import logging
@@ -112,13 +113,29 @@ class ValidationReport:
 # ---------------------------------------------------------------------------
 
 
-def _cache_path(vendor: str, start: date, end: date) -> Path:
-    """Deterministic cache filename for a (vendor, window) pair."""
-    return DATA_RAW / f"prices_{vendor}_{start:%Y%m%d}_{end:%Y%m%d}.parquet"
+def _universe_tag(tickers: Sequence[str]) -> str:
+    """Return a short, stable fingerprint of a ticker set.
+
+    The cache key MUST include the ticker set. An earlier version keyed only on
+    (vendor, start, end), so a one-ticker download silently overwrote the cache
+    file holding the full 16-ticker panel -- and every later run then read a
+    single-column panel back believing it was the full universe. Sorted so that
+    ticker ordering does not produce spurious cache misses.
+    """
+    joined = ",".join(sorted(str(t) for t in tickers))
+    return hashlib.sha1(joined.encode("utf-8")).hexdigest()[:8]
 
 
-def _manifest_path(vendor: str, start: date, end: date) -> Path:
-    return _cache_path(vendor, start, end).with_suffix(".json")
+def _cache_path(vendor: str, start: date, end: date, tickers: Sequence[str]) -> Path:
+    """Deterministic cache filename for a (vendor, window, universe) triple."""
+    tag = _universe_tag(tickers)
+    return DATA_RAW / (
+        f"prices_{vendor}_{start:%Y%m%d}_{end:%Y%m%d}_{len(tickers)}x{tag}.parquet"
+    )
+
+
+def _manifest_path(vendor: str, start: date, end: date, tickers: Sequence[str]) -> Path:
+    return _cache_path(vendor, start, end, tickers).with_suffix(".json")
 
 
 def _write_manifest(
@@ -134,6 +151,7 @@ def _write_manifest(
         "requested_start": start.isoformat(),
         "requested_end": end.isoformat(),
         "requested_tickers": list(tickers),
+        "universe_tag": _universe_tag(tickers),
         "returned_tickers": [str(c) for c in frame.columns],
         "retrieved_at_utc": datetime.now(timezone.utc).isoformat(),
         "n_rows": int(frame.shape[0]),
@@ -141,7 +159,7 @@ def _write_manifest(
         "last_date": str(frame.index.max().date()) if len(frame) else None,
         "field": "adjusted_close",
     }
-    _manifest_path(vendor, start, end).write_text(
+    _manifest_path(vendor, start, end, tickers).write_text(
         json.dumps(manifest, indent=2), encoding="utf-8"
     )
 
@@ -464,7 +482,7 @@ def load_prices(
         RuntimeError: If the vendor returns no usable data.
     """
     end = end or date.today()
-    cache = _cache_path(vendor, start, end)
+    cache = _cache_path(vendor, start, end, tickers)
 
     if use_cache and not refresh and cache.exists():
         logger.info("Loading cached %s panel from %s", vendor, cache.name)

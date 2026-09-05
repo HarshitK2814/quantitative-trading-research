@@ -90,3 +90,63 @@ as new entries. This file is part of the evidence trail.
 - FRED `DTB3` loader with unit-tested discount-basis → daily-simple conversion.
 - EDA notebook: correlation structure, volatility regimes, autocorrelation.
 - Feature layer with the one-bar shift, plus the shift-invariance test.
+
+---
+
+## 2026-09-05 — Week 1, Day 1 (evening): broker connected, cache bug found
+
+**Done**
+
+- Alpaca paper account connected and verified. Account `PA3LG4UV7Q09`, ACTIVE,
+  $100,000.00 equity, matching the documented default.
+- `scripts/verify_broker.py`: self-tests the interlock against six unsafe
+  configurations before loading any credential, then calls `/v2/account` and
+  prints a redacted summary. All six blocked, paper endpoint allowed.
+- Ran the Alpaca cross-check that was previously blocked on credentials.
+
+**Findings**
+
+7. **Cache-poisoning bug in my own code.** `_cache_path` keyed only on
+   (vendor, start, end), ignoring the ticker set — and `use_cache=False`
+   skipped reading but still *wrote*. So `verify_adjustment_consistency`'s
+   per-ticker downloads silently overwrote the 16-ticker panel with a
+   single-column TLT panel, and every later run read that back believing it was
+   the full universe. **No error was raised at any point.**
+
+   This is the worst class of research bug: it does not fail, it just makes
+   results quietly wrong and irreproducible. Fixed by including a SHA-1
+   fingerprint of the sorted ticker set in the cache filename, plus four
+   regression tests. Found only because a `KeyError` happened to surface it —
+   which is luck, not process. Worth remembering that the manifest would have
+   caught it too, had I read it.
+
+8. **Alpaca IEX coverage measured, not assumed.** Zero bars before 2018;
+   43.9% of 2020; **100% from 2021-01-01 onward.** Full coverage begins exactly
+   at the out-of-sample test boundary. This is luck and will be reported as
+   luck — but it means the OOS result can be cross-validated against an
+   independent vendor. Train and validation periods cannot be.
+
+9. **Vendor agreement is strong.** yfinance vs Alpaca IEX daily returns,
+   2021-01-01 → 2026-09-04: 22,784 observations, 31 disagreements (0.136%),
+   median return correlation 0.99906, minimum 0.99826, largest single-day
+   difference 1.17%. Supports using yfinance as the research source at daily
+   frequency. Does **not** speak to execution divergence — that involves
+   spread, intraday timing, and IEX book depth, and stays a week-11 question.
+
+10. **Paper account offers 4x buying power** ($400k against $100k cash). The
+    project is long-only and unlevered, so sizing is against cash. The
+    verification script reports the discrepancy explicitly so a future bug
+    cannot quietly spend margin.
+
+**Decisions**
+
+- **Declined the Alpaca MCP server.** It would put a second copy of the
+  credentials in a global Claude config, and — more importantly — it bypasses
+  `src/config.py`'s paper-only interlock entirely. The deliverable is committed,
+  auditable code a reviewer can read; an MCP server contributes nothing to the
+  repository. Convenience for the agent, zero value for the artefact.
+
+**Next**
+
+- FRED `DTB3` loader with unit-tested discount-basis → daily-simple conversion.
+- Feature layer with the one-bar shift and the shift-invariance test.

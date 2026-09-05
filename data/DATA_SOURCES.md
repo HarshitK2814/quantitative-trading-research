@@ -117,8 +117,60 @@ than take this write-up on trust.
 | Docs | https://docs.alpaca.markets/docs/trading-api |
 | Frequency | Daily bars, `adjustment=all` |
 | Feed | **IEX** (the only feed available to free/paper accounts) |
-| Status | **Implemented; pending credentials.** Not yet run. |
+| Status | **Run and passed, 2026-09-05.** Paper account `PA3LG4UV7Q09`. |
+| Coverage retrieved | 2018-11-01 → 2026-09-04, 1,537 bars (see coverage table) |
 | Cost | Free |
+
+### Measured coverage (not assumed)
+
+The plan required IEX history depth to be measured rather than asserted. Bars
+returned per calendar year, against yfinance as the denominator (SPY):
+
+| Year | yfinance | Alpaca IEX | Coverage |
+|---|---|---|---|
+| 2007–2017 | 251–253 each | 0 | **0%** |
+| 2018 | 251 | 1 | 0.4% |
+| 2019 | 252 | 0 | 0% |
+| 2020 | 253 | 111 | 43.9% |
+| 2021 | 252 | 252 | **100%** |
+| 2022 | 251 | 251 | **100%** |
+| 2023 | 250 | 250 | **100%** |
+| 2024 | 252 | 252 | **100%** |
+| 2025 | 250 | 250 | **100%** |
+| 2026 (to 09-04) | 170 | 170 | **100%** |
+
+**This is a fortunate alignment and it should be stated as luck, not design.**
+Full IEX coverage begins 2021-01-01, which is exactly the start of the
+out-of-sample test window. The OOS result can therefore be cross-validated
+against a genuinely independent vendor. The train (2007–2016) and validation
+(2017–2020) periods have no IEX coverage and cannot be cross-checked this way —
+for those, the only available control is the internal adjustment-consistency
+check in §4.
+
+### Measured agreement, 2021-01-01 → 2026-09-04
+
+Daily returns, all 16 tickers, disagreement threshold 50 bps:
+
+| Metric | Value |
+|---|---|
+| Observations compared | **22,784** |
+| Disagreeing days | **31 (0.1361%)** |
+| Median return correlation | **0.99906** |
+| Minimum return correlation | **0.99826** (XLV) |
+| Largest single-day difference | **1.167%** (SPY) |
+
+Two vendors with different feeds — Yahoo's consolidated tape versus IEX alone —
+agree on daily ETF returns to better than 0.998 correlation across every name.
+The residual disagreements are concentrated on a handful of days and are
+consistent with different closing-print conventions between a single exchange
+and the consolidated tape.
+
+**What this licenses, and what it does not.** It supports using yfinance as the
+research source without a systematic-bias concern at daily frequency. It does
+**not** mean live fills will match backtest prices: this measures *closing
+price* agreement, whereas execution divergence also involves spread, timing
+within the day, and IEX's thinner book. Week 11's reconciliation must keep
+those separate.
 
 ### Why this is a better cross-check than Stooq was
 

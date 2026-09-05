@@ -151,3 +151,64 @@ def test_compare_vendors_detects_a_structural_break(
     assert result.loc["AAA", "disagree_days"] >= 1
     assert result.loc["BBB", "disagree_days"] == 0
     assert result.loc["AAA", "max_abs_diff"] > 0.4
+
+
+# ---------------------------------------------------------------------------
+# Cache-key regression tests
+# ---------------------------------------------------------------------------
+
+
+def test_cache_key_distinguishes_ticker_sets() -> None:
+    """Different universes must never share a cache file.
+
+    Regression test. An earlier version keyed the cache only on
+    (vendor, start, end). A one-ticker download therefore overwrote the file
+    holding the full 16-ticker panel, and later runs silently read a
+    single-column panel back believing it was the full universe -- a
+    reproducibility failure that produces no error at all.
+    """
+    from datetime import date
+
+    from src.data import _cache_path
+
+    start, end = date(2007, 1, 1), date(2026, 9, 5)
+    full = _cache_path("yfinance", start, end, ["SPY", "QQQ", "TLT"])
+    single = _cache_path("yfinance", start, end, ["TLT"])
+    assert full != single
+    assert full.name != single.name
+
+
+def test_cache_key_is_order_independent() -> None:
+    """Ticker ordering must not cause spurious cache misses."""
+    from datetime import date
+
+    from src.data import _cache_path
+
+    start, end = date(2007, 1, 1), date(2026, 9, 5)
+    a = _cache_path("yfinance", start, end, ["SPY", "QQQ", "TLT"])
+    b = _cache_path("yfinance", start, end, ["TLT", "SPY", "QQQ"])
+    assert a == b
+
+
+def test_cache_key_distinguishes_vendors_and_windows() -> None:
+    """Vendor and date window remain part of the key."""
+    from datetime import date
+
+    from src.data import _cache_path
+
+    tickers = ["SPY", "QQQ"]
+    base = _cache_path("yfinance", date(2007, 1, 1), date(2026, 9, 5), tickers)
+    other_vendor = _cache_path("alpaca", date(2007, 1, 1), date(2026, 9, 5), tickers)
+    other_window = _cache_path("yfinance", date(2010, 1, 1), date(2026, 9, 5), tickers)
+    assert len({base, other_vendor, other_window}) == 3
+
+
+def test_manifest_path_matches_cache_path() -> None:
+    """The manifest must sit beside the exact cache file it describes."""
+    from datetime import date
+
+    from src.data import _cache_path, _manifest_path
+
+    args = ("yfinance", date(2007, 1, 1), date(2026, 9, 5), ["SPY", "QQQ"])
+    assert _manifest_path(*args).stem == _cache_path(*args).stem
+    assert _manifest_path(*args).suffix == ".json"
