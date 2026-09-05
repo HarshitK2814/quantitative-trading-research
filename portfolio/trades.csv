@@ -1,0 +1,11 @@
+timestamp_utc,trade_date,strategy_version,symbol,side,qty,order_type,time_in_force,reference_price,filled_avg_price,filled_qty,slippage_bps,notional,current_weight,target_weight,weight_delta,reason,order_id,client_order_id,status,account_equity,dry_run
+2026-09-05T16:39:08.993916+00:00,2026-09-05,H1-momentum-126-21-k5-monthly,IWM,buy,67,market,day,295.86,,0.0,,19822.62,0.0,0.2,0.2,increase to target,,,DRY_RUN,100000.0,True
+2026-09-05T16:39:08.994917+00:00,2026-09-05,H1-momentum-126-21-k5-monthly,QQQ,buy,27,market,day,717.91,,0.0,,19383.57,0.0,0.2,0.2,increase to target,,,DRY_RUN,100000.0,True
+2026-09-05T16:39:08.996918+00:00,2026-09-05,H1-momentum-126-21-k5-monthly,VNQ,buy,208,market,day,96.01,,0.0,,19970.08,0.0,0.2,0.2,increase to target,,,DRY_RUN,100000.0,True
+2026-09-05T16:39:08.999026+00:00,2026-09-05,H1-momentum-126-21-k5-monthly,XLE,buy,312,market,day,64.07,,0.0,,19989.84,0.0,0.2,0.2,increase to target,,,DRY_RUN,100000.0,True
+2026-09-05T16:39:09.000024+00:00,2026-09-05,H1-momentum-126-21-k5-monthly,XLK,buy,106,market,day,187.3,,0.0,,19853.8,0.0,0.2,0.2,increase to target,,,DRY_RUN,100000.0,True
+2026-09-05T16:39:43.699870+00:00,2026-09-05,H1-momentum-126-21-k5-monthly,IWM,buy,67,market,day,295.86,,0.0,,19822.62,0.0,0.2,0.2,increase to target,823d710d-9ba1-44fa-aa4f-1089d5900d47,H1-momentum-126-21-k-IWM-20260905163943,accepted,100000.0,False
+2026-09-05T16:39:44.019487+00:00,2026-09-05,H1-momentum-126-21-k5-monthly,QQQ,buy,27,market,day,717.91,,0.0,,19383.57,0.0,0.2,0.2,increase to target,226b82c9-468e-453e-b743-93c3d109030e,H1-momentum-126-21-k-QQQ-20260905163943,accepted,100000.0,False
+2026-09-05T16:39:44.343177+00:00,2026-09-05,H1-momentum-126-21-k5-monthly,VNQ,buy,208,market,day,96.01,,0.0,,19970.08,0.0,0.2,0.2,increase to target,69e16c58-17e4-43c1-9bd7-6b40ff969747,H1-momentum-126-21-k-VNQ-20260905163943,accepted,100000.0,False
+2026-09-05T16:39:44.661464+00:00,2026-09-05,H1-momentum-126-21-k5-monthly,XLE,buy,312,market,day,64.07,,0.0,,19989.84,0.0,0.2,0.2,increase to target,415ca59d-4bf5-4521-bc64-d0f8e966ab1b,H1-momentum-126-21-k-XLE-20260905163943,accepted,100000.0,False
+2026-09-05T16:39:44.976493+00:00,2026-09-05,H1-momentum-126-21-k5-monthly,XLK,buy,106,market,day,187.3,,0.0,,19853.8,0.0,0.2,0.2,increase to target,43de9805-a148-44c4-b21e-70e52586570f,H1-momentum-126-21-k-XLK-20260905163943,accepted,100000.0,False

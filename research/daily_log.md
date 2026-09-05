@@ -284,3 +284,87 @@ as new entries. This file is part of the evidence trail.
 
 - `src/signals.py`: H1 cross-sectional momentum.
 - First strategy result on train, with the full cost sweep.
+
+---
+
+## 2026-09-05 — Week 9 (pulled forward): LIVE PAPER DEPLOYMENT
+
+**Schedule change.** Live paper trading was planned for week 9 (November). It
+has been pulled forward to week 1 so that 3-4 months of live record exists
+before application deadlines. The research timeline is unchanged and continues
+in parallel; only the deployment date moved.
+
+**Done**
+
+- `src/broker.py`, `src/risk.py`, `src/execution.py`, `scripts/run_live.py`.
+- 22 new tests (155 total), lint clean.
+- **Deployed live to the Alpaca paper account.**
+
+**Deployment record**
+
+| Field | Value |
+|---|---|
+| Account | `PA3LG4UV7Q09` (paper) |
+| Strategy version | `H1-momentum-126-21-k5-monthly` |
+| Deployed | 2026-09-05, orders queued for the 2026-09-08 open |
+| Starting equity | $100,000.00 |
+| Signal date | 2026-09-04 (one-bar lag applied) |
+| Holdings | QQQ, IWM, XLK, XLE, VNQ at 20% each |
+| Orders | 5 buys, $99,020 notional, turnover 0.99 |
+| Risk breaches | 0 |
+
+**What was deployed, and why it is a rejected strategy**
+
+The deployed specification is exactly H1's pre-registered primary parameters —
+**the same strategy rejected on train-period evidence** in
+`research/overfitting.md`. This is deliberate.
+
+Because the parameters were committed to git before any backtest existed,
+running them forward is a **clean forward test of a pre-registered hypothesis**.
+Nothing is fitted. The question is not "will this earn a return" but "does live
+experience agree with the backtest's rejection?" A confirmed rejection is a
+result; a contradiction would be a more interesting one.
+
+It must never be described as a selected or recommended strategy. The README,
+the report, and any application material must state that it was rejected before
+deployment and deployed anyway as a forward test.
+
+**Findings**
+
+19. **Whole-share rounding leaves a measurable cash residual.** $99,020 of
+    $100,000 deployed; 0.98% sits in cash because a $717 QQQ share cannot
+    express an arbitrary percentage. Rounding is toward zero so it can never
+    increase exposure. Recorded rather than corrected — fractional orders would
+    reduce it but introduce their own fill semantics.
+
+20. **The first trade's slippage measurement will be contaminated and must be
+    excluded.** Orders were submitted on a Saturday with Friday's close as the
+    reference price, and will fill at Tuesday's open (Monday is Labor Day). The
+    measured "slippage" therefore contains a three-day weekend gap, which is
+    not slippage at all. Every subsequent rebalance will be submitted during or
+    near market hours and will measure the real thing. Flagged now, before the
+    number exists, so the exclusion cannot look like it was chosen after seeing
+    an inconvenient value.
+
+21. **Duplicate same-day snapshots are legitimate but must not double-count.**
+    Running the script twice in a day (dry run, then execute) appends two
+    honest rows. `load_snapshots` now deduplicates by date keeping the last,
+    with a flag to inspect the raw audit trail. The file stays append-only.
+
+**Decisions**
+
+- **Dry run is the default.** `--execute` must be passed explicitly, so an
+  accidental invocation cannot trade.
+- **Sells are ordered before buys.** A fully-invested rebalance can otherwise be
+  rejected for insufficient buying power before the sale proceeds land.
+- **Reconcile against broker positions, not internal state.** A missed or
+  partial fill then self-corrects at the next run instead of compounding.
+- **Benchmarks are computed, not traded.** SPY, equal-weight, and 60/40 are
+  derived from market data, so a single paper account suffices and no capital
+  is split.
+
+**Next**
+
+- Daily: `PYTHONPATH=. python scripts/run_live.py --execute`.
+- Verify Tuesday's fills and confirm slippage capture works end to end.
+- Research continues: H2 time-series trend.
