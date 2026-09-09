@@ -440,8 +440,30 @@ deployment and deployed anyway as a forward test.
   derived from market data, so a single paper account suffices and no capital
   is split.
 
+26. **Scheduled run now also auto-commits and pushes the journal, 2026-09-09,
+    at the user's request** ("Yes, auto-commit and push nightly" over the
+    local-only and commit-only-no-push alternatives). `scripts/run_live_scheduled.ps1`
+    stages **only** `portfolio/trades.csv` and `portfolio/daily_snapshot.csv`
+    after a successful run -- deliberately not `git add -A`, since an
+    unattended job running nightly for months must not sweep in unrelated
+    manual edits or the dated cache manifests `src/data.py` writes under
+    `data/raw/` each day. Skips the commit entirely if nothing is staged
+    (e.g. a day with no trades and a deduplicated snapshot). Verified
+    end-to-end: triggered manually, produced commit `6d34ab8`, pushed
+    cleanly. One cosmetic defect found and fixed in the same check:
+    `Set-Content -Encoding utf8` in PowerShell 5.1 prepends a BOM, which
+    leaked a stray character into that commit's message on GitHub (harmless,
+    but ugly, and not repeated in `-Encoding ascii`). Left uncorrected in
+    `6d34ab8` itself -- not editing a pushed commit for a cosmetic issue.
+    If the automated push ever fails (network, merge conflict), the run
+    still succeeds and the journal is still committed locally; only the push
+    step is skipped, logged clearly in `logs/live_run.log` for the next
+    manual session to resolve.
+
 **Next**
 
-- Daily: `PYTHONPATH=. python scripts/run_live.py --execute`.
-- Verify Tuesday's fills and confirm slippage capture works end to end.
-- Research continues: H2 time-series trend.
+- Daily: automatic via Windows Task Scheduler (`PaperTradingDailyRun`,
+  21:30 IST) -- trades, journals, commits, and pushes with no manual step.
+  Check `logs/live_run.log` occasionally, not daily.
+- Research continues: H2 time-series trend; H6's own backtest before any
+  live short exposure is considered.
