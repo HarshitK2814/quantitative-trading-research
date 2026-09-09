@@ -277,11 +277,34 @@ def load_snapshots(deduplicate: bool = True) -> pd.DataFrame:
     return frame.reset_index(drop=True)
 
 
-def load_trades() -> pd.DataFrame:
-    """Load the trade journal, or an empty frame if none exists yet."""
+def load_trades(deduplicate: bool = False) -> pd.DataFrame:
+    """Load the trade journal, or an empty frame if none exists yet.
+
+    Args:
+        deduplicate: Collapse repeated correction rows that recorded the
+            exact same fill event more than once -- the artefact of the bug
+            fixed in ``research/daily_log.md`` finding #24, where a stale
+            "still pending" read caused every re-run to re-append an
+            identical correction for an order that had already filled. Keeps
+            the first occurrence of each (order, fields) combination in time
+            order. Default ``False`` returns the raw append-only file
+            unmodified, which is what to use when the point is to audit what
+            actually happened, bug included.
+
+    Returns:
+        The trade journal, deduplicated if requested.
+
+    """
     if not TRADES_PATH.exists():
         return pd.DataFrame(columns=_TRADE_FIELDS)
-    return pd.read_csv(TRADES_PATH, parse_dates=["timestamp_utc"])
+    frame = pd.read_csv(TRADES_PATH, parse_dates=["timestamp_utc"])
+    if deduplicate:
+        frame = frame.sort_values("timestamp_utc").drop_duplicates(
+            subset=["order_id", "symbol", "status", "filled_avg_price",
+                    "filled_qty", "qty"],
+            keep="first",
+        )
+    return frame.reset_index(drop=True)
 
 
 def update_fills(broker: AlpacaPaperBroker) -> int:
@@ -293,6 +316,16 @@ def update_fills(broker: AlpacaPaperBroker) -> int:
     editing the original, keeping the journal append-only and preserving the
     record of what was known at submission time.
 
+    Note:
+        The append-only design means the *original* submission row's status
+        never changes -- it says ``accepted`` forever, even after a
+        correction row has recorded the real fill. "Still pending" must
+        therefore be judged from each order's **most recent** journal row,
+        not its first one, or every future run re-discovers the same
+        already-filled order as pending and appends another duplicate
+        correction indefinitely. (This is exactly what happened before this
+        note was added: see research/daily_log.md finding #24.)
+
     Returns:
         Number of correction rows written.
 
@@ -301,10 +334,20 @@ def update_fills(broker: AlpacaPaperBroker) -> int:
     if trades.empty:
         return 0
 
-    pending = trades[
-        (trades["status"].isin(["accepted", "new", "pending_new", "partially_filled"]))
-        & (trades["order_id"].astype(str).str.len() > 0)
+    submitted = trades[
+        (trades["order_id"].astype(str).str.len() > 0)
         & (~trades["dry_run"].astype(str).str.lower().eq("true"))
+    ]
+    if submitted.empty:
+        return 0
+
+    latest_per_order = (
+        submitted.sort_values("timestamp_utc").groupby("order_id").tail(1)
+    )
+    pending = latest_per_order[
+        latest_per_order["status"].isin(
+            ["accepted", "new", "pending_new", "partially_filled"]
+        )
     ]
 
     written = 0

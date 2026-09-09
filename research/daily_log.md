@@ -382,6 +382,52 @@ deployment and deployed anyway as a forward test.
     `run_live.py --execute` with no logic of its own, so it carries no risk of
     silently diverging from what a manual run would do.
 
+24. **`update_fills` duplicated every correction row on every subsequent run
+    -- caught 2026-09-09 while verifying the sleeve refactor changed nothing.**
+    Root cause: the "still pending" check read status off each order's
+    *original* append-only submission row, which never changes (append-only,
+    by design). Once an order filled, every future run re-discovered that
+    same stale `accepted` row as pending and appended another identical
+    "filled" correction -- indefinitely. By the time this was caught, the
+    five 2026-09-05 orders had 4-5 duplicate correction rows each (49 total
+    "fill update" rows for what should have been far fewer). Fixed by
+    judging pending status from each order's **most recent** journal row
+    (`groupby("order_id").tail(1)`), not its first. The historical duplicates
+    are left in `portfolio/trades.csv` untouched -- deleting them would be
+    editing a record of a real bug -- but `load_trades(deduplicate=True)` now
+    collapses exact repeated correction events for any analysis that counts
+    trades or measures slippage, so the bug cannot silently inflate a trade
+    count or duplicate a slippage observation later. 6 regression tests
+    added (`tests/test_execution_journal.py`), including one that
+    reconstructs the exact duplication pattern and checks it collapses.
+
+25. **Multi-strategy sleeve architecture added 2026-09-09, at the user's
+    request, alongside a long/short hypothesis (H6, in
+    `research/hypotheses.md` AMENDMENTS).** `src/sleeves.py` blends multiple
+    pre-registered strategies, each running against a fixed capital
+    fraction, into one combined weight vector for the single physical paper
+    account. The live registry in `scripts/run_live.py` currently holds only
+    the already-deployed H1 sleeve at 100% -- confirmed via dry run to
+    produce byte-identical target weights to the pre-refactor code. **No
+    second sleeve is live.** H6 permits short exposure but the risk engine
+    still hard-enforces long-only regardless of a sleeve's `allow_short`
+    flag; `validate_allocation` raises if any active sleeve claims
+    `allow_short=True`, so a short-capable sleeve cannot go live by accident
+    before the risk engine is deliberately extended to support it. That
+    extension, and any live short exposure, waits on H6's own backtest --
+    the same sequence H1 went through, not a shortcut around it.
+
+    This addition followed an explicit request to "try different strategies
+    till one of them works good and the moment it seems not to work just
+    change the strategy again" -- which was declined as stated. Swapping a
+    live strategy out because of short-term paper losses is p-hacking a live
+    account and directly contradicts this project's own pre-registration
+    rule (see the amendment discipline at the top of
+    `research/hypotheses.md`). What was built instead: a mechanism for
+    running multiple strategies **concurrently and transparently**, each
+    pre-registered, each running to its own declared endpoint, with no
+    automatic exit-on-underperformance logic anywhere in the code.
+
 **Decisions**
 
 - **Dry run is the default.** `--execute` must be passed explicitly, so an

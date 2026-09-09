@@ -7,12 +7,16 @@
 **Dry run is the default.** Orders are only submitted when ``--execute`` is
 passed explicitly, so an accidental invocation cannot trade.
 
-Deployed strategy
------------------
-``H1-momentum-126-21-k5-monthly`` -- the exact pre-registered specification
-from ``research/hypotheses.md``, committed before any backtest was run.
+Deployed sleeves
+----------------
+Live capital is allocated across the ``SLEEVES`` registry below (see
+``src/sleeves.py``), each a pre-registered strategy from
+``research/hypotheses.md`` running against a fixed fraction of account
+equity. Today that registry holds exactly one sleeve:
+``H1-momentum-126-21-k5-monthly`` at 100%, committed before any backtest was
+run.
 
-This strategy was **REJECTED** on train-period evidence (see
+That strategy was **REJECTED** on train-period evidence (see
 ``research/overfitting.md``): its bootstrap Sharpe CI includes zero, and only
 36% of its parameter grid beat an equal-weight benchmark.
 
@@ -22,7 +26,11 @@ money" but "does live experience agree with the backtest's rejection?" Because
 the parameters were fixed in git before any result existed, nothing here is
 fitted, which makes this a genuinely clean out-of-sample observation.
 
-It must never be described as a selected or recommended strategy.
+It must never be described as a selected or recommended strategy. The same
+rule applies to every future sleeve added to the registry: a sleeve is
+switched on only after its own hypothesis is pre-registered and backtested,
+and switched off only by a dated, logged decision -- never as a reaction to
+a run of losing days. See ``src/sleeves.py`` for why.
 """
 
 from __future__ import annotations
@@ -48,8 +56,31 @@ from src.execution import (
 )
 from src.risk import check_and_adjust, exposure_report
 from src.signals import cross_sectional_momentum
+from src.sleeves import Sleeve, combined_target_weights, validate_allocation
 
-STRATEGY_VERSION = "H1-momentum-126-21-k5-monthly"
+# ---------------------------------------------------------------------------
+# Live sleeve registry -- this list IS the deployment decision.
+#
+# Only H1 is active, at 100% of account capital, exactly as deployed on
+# 2026-09-05. Adding a second sleeve here is a live-capital decision that
+# needs the same bar H1 got (pre-registered in research/hypotheses.md,
+# backtested, logged) -- see src/sleeves.py's module docstring. Building the
+# combiner does not, by itself, change what is trading.
+# ---------------------------------------------------------------------------
+SLEEVES: list[Sleeve] = [
+    Sleeve(
+        name="H1-momentum-126-21-k5-monthly",
+        hypothesis_id="H1",
+        capital_fraction=1.0,
+        signal_fn=lambda prices: cross_sectional_momentum(prices, rebalance="D"),
+        allow_short=False,
+        active=True,
+        note="Deployed 2026-09-05 as a forward test of a pre-registered, "
+             "rejected hypothesis. See research/overfitting.md.",
+    ),
+]
+
+STRATEGY_VERSION = "+".join(s.name for s in SLEEVES if s.active)
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
@@ -58,20 +89,25 @@ logger = logging.getLogger("run_live")
 pd.set_option("display.width", 200)
 
 
-def build_target_weights(as_of: date) -> tuple[pd.Series, pd.Timestamp]:
-    """Compute today's target weights from the deployed strategy.
+def build_target_weights(
+    as_of: date,
+) -> tuple[pd.Series, pd.Timestamp, dict[str, pd.Series]]:
+    """Compute today's combined target weights across all active sleeves.
+
+    Each sleeve's signal reblances daily so its vector always reflects the
+    current top-k; the execution engine's min-notional filter suppresses
+    trading when nothing has changed, which reproduces monthly turnover
+    without needing to be run on exactly the right calendar day.
 
     Returns:
-        The target weight vector and the signal date it was formed from.
+        The combined weight vector, the signal date it was formed from, and
+        each active sleeve's own (unscaled) weights for attribution/logging.
+
     """
+    validate_allocation(SLEEVES)
     prices = load_prices(UNIVERSE, SPLITS.history_start, as_of, refresh=True)
-    # Rebalance daily so the vector always reflects the current top-k; the
-    # engine's min-notional filter suppresses trading when nothing has changed,
-    # which reproduces monthly turnover without needing to be run on exactly
-    # the right calendar day.
-    weights = cross_sectional_momentum(prices, rebalance="D")
-    latest = weights.dropna(how="all").index.max()
-    return weights.loc[latest], latest
+    combined, per_sleeve = combined_target_weights(SLEEVES, prices)
+    return combined, prices.index[-1], per_sleeve
 
 
 def main() -> None:
@@ -139,9 +175,13 @@ def main() -> None:
     turnover = 0.0
 
     if not args.snapshot:
-        raw_weights, signal_date = build_target_weights(date.today())
+        raw_weights, signal_date, per_sleeve = build_target_weights(date.today())
         print(f"\nSignal formed from data through {signal_date.date()} "
               f"(one-bar lag already applied).")
+        for sleeve_name, weights in per_sleeve.items():
+            held = weights[weights.abs() > 1e-9].sort_values(ascending=False)
+            print(f"  Sleeve {sleeve_name!r} (own weights, unscaled): "
+                  f"{held.round(4).to_dict()}")
 
         report = check_and_adjust(
             raw_weights, equity_history=equity_history, positions=positions

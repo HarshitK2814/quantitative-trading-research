@@ -214,4 +214,58 @@ when it is inconvenient.
 *(Post-hoc hypotheses and amendments are appended below with dates. Nothing
 above this line is edited after commit.)*
 
-None yet.
+### H6 — Long/short cross-sectional momentum (added 2026-09-09, post-hoc)
+
+**Context for why this is post-hoc.** This was not in the original five
+hypotheses. It is added now, at the user's request, specifically to permit
+short exposure and multiple concurrently-deployed strategies. It is labelled
+post-hoc, dated, and given the same discipline as H1 rather than being folded
+into H1's text, so the git history shows plainly that it was not part of the
+original design.
+
+**Research question.** Does adding a short leg on the bottom-*k* of the same
+momentum ranking used in H1 improve risk-adjusted returns over H1's long-only
+version — and specifically, does it reduce market-beta exposure enough to
+justify the added operational complexity and cost of shorting?
+
+- **H0:** The net-of-cost Sharpe of the long/short portfolio does not exceed
+  H1's long-only Sharpe by a margin whose bootstrap 95% CI excludes zero, OR
+  the long/short book's beta to SPY is not meaningfully lower than H1's.
+- **H1 (alternative):** The long/short version achieves comparable or better
+  Sharpe than H1 **and** materially lower beta to SPY, i.e. the short leg is
+  doing more than just adding cost and noise.
+
+| Element | Specification |
+|---|---|
+| Signal | Identical to H1: trailing total return, lookback 126, skip 21 days. |
+| Construction | Long top *k*=5, short bottom *k*=5, from the same 16-ETF universe. Dollar-neutral: long leg sums to 50% of allocated capital, short leg to -50%, gross = 100% of allocated capital, net ≈ 0%. |
+| Primary parameters | Same as H1's primary spec, mirrored to the short side. |
+| Sensitivity grid | Same grid as H1 §H1, applied symmetrically to both legs. |
+| Rebalance | Monthly, same as H1. |
+| Position limits | Max 25% gross in any single name (long or short), same asset-class cap as the existing risk engine, gross ≤ 100% of allocated capital (no leverage on top of the dollar-neutral structure itself). |
+
+**Stated prior (before running anything):** I expect the short leg to add
+cost and operational risk without a commensurate Sharpe improvement, because
+the bottom-*k* momentum losers in this specific universe (large, liquid
+sector/asset-class ETFs) are not obviously mispriced — being a laggard is not
+the same as being overpriced, and unlike H3's mean-reversion hypothesis this
+isn't even betting on a reversal, just on continued relative underperformance.
+The most likely honest outcome is a lower-beta but similar-or-worse-Sharpe
+book. If that is what the data shows, that is the finding, not a reason to
+retune the spec.
+
+**Disclosed limitation, stated before any test:** Alpaca's **paper** account
+simulates short mechanics (margin, fills) but does not charge real borrow
+fees, apply hard-to-borrow restrictions, or model the risk of a short being
+called away. A backtest or forward test run here will be **optimistic
+relative to a real short book** for that reason, and any writeup must say so
+explicitly rather than let a live paper Sharpe stand in for what a real
+short-selling account would have earned.
+
+**Decision rule for deployment.** This hypothesis must go through the same
+sequence H1 did — backtested on train data, checked against H5's grid-median
+rejection rule, and only then considered for live capital as its own labelled
+sleeve (see `src/sleeves.py`). No live short exposure exists yet. Building
+the sleeve mechanism that *could* run it is not the same decision as running
+it, and the two are logged separately.
+
