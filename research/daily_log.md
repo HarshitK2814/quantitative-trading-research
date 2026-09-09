@@ -365,6 +365,23 @@ deployment and deployed anyway as a forward test.
     timing is visible and checkable rather than something to notice later.
     159 tests pass, ruff clean.
 
+23. **Daily run automated via Windows Task Scheduler, 2026-09-09, at the
+    user's explicit request (chose "fully automatic" over manual or
+    dry-run-then-approve).** Task `PaperTradingDailyRun` fires
+    `scripts/run_live_scheduled.ps1` daily at 21:30 IST, which stays inside US
+    market hours (7pm-1:30am IST now; 8pm-2:30am IST after the Nov 1 2026 DST
+    change) so a single fixed local time works across the whole deployment
+    without adjustment. The first attempt failed immediately: PowerShell's
+    native-command stderr redirection wraps Python's INFO log lines in
+    terminating `ErrorRecord`s under `$ErrorActionPreference = "Stop"`,
+    aborting on the very first log line even though the script itself ran
+    correctly (confirmed by running the identical command directly). Fixed by
+    redirecting through `cmd.exe` instead of PowerShell's own `>>`/`*>>`.
+    Verified working: manually triggered, exit code 0, log content matches a
+    direct run. This is a scheduling wrapper only -- it calls the same
+    `run_live.py --execute` with no logic of its own, so it carries no risk of
+    silently diverging from what a manual run would do.
+
 **Decisions**
 
 - **Dry run is the default.** `--execute` must be passed explicitly, so an
