@@ -22,10 +22,14 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 import pandas as pd
 
 from src.config import ASSET_CLASS, RISK, RiskLimits
+
+if TYPE_CHECKING:
+    from src.broker import Position
 
 logger = logging.getLogger(__name__)
 
@@ -86,17 +90,77 @@ def current_drawdown(equity_history: pd.Series) -> float:
     return float(equity_history.iloc[-1]) / peak - 1.0
 
 
+def apply_position_stops(
+    weights: pd.Series,
+    positions: dict[str, Position] | None,
+    limits: RiskLimits = RISK,
+) -> tuple[pd.Series, list[str]]:
+    """Force an exit for any held position past its stop-loss or take-profit.
+
+    This overlay is independent of the H1 signal: a stopped-out or
+    profit-taken symbol is zeroed regardless of what the signal wants to do
+    with it. It exists to bound single-position pain and to lock in single-
+    position gains, which a portfolio-level drawdown check alone cannot do
+    (a 24% loss in one name can be masked by gains elsewhere and never trip a
+    portfolio-level threshold at all).
+
+    Args:
+        weights: Target weights so far (may not include every held symbol).
+        positions: Current broker positions, for ``avg_entry_price`` and
+            ``current_price``. ``None`` or empty skips the check (e.g. a flat
+            book, or an offline backtest with no broker connection).
+        limits: Limit set to enforce.
+
+    Returns:
+        Weights with any stopped/taken symbol forced to zero, and the list of
+        human-readable events (empty if nothing fired).
+
+    """
+    if not positions:
+        return weights, []
+
+    weights = weights.copy()
+    events: list[str] = []
+
+    for symbol, position in positions.items():
+        if position.avg_entry_price <= 0 or position.qty == 0:
+            continue
+        pnl_pct = position.current_price / position.avg_entry_price - 1.0
+
+        if pnl_pct <= -limits.stop_loss_pct:
+            weights[symbol] = 0.0
+            events.append(
+                f"STOP-LOSS: {symbol} at {pnl_pct:.2%} (<= -"
+                f"{limits.stop_loss_pct:.0%} from entry "
+                f"{position.avg_entry_price:.2f}); forcing exit regardless of signal."
+            )
+        elif pnl_pct >= limits.take_profit_pct:
+            weights[symbol] = 0.0
+            events.append(
+                f"TAKE-PROFIT: {symbol} at {pnl_pct:.2%} (>= "
+                f"{limits.take_profit_pct:.0%} from entry "
+                f"{position.avg_entry_price:.2f}); locking in gain."
+            )
+
+    return weights, events
+
+
 def check_and_adjust(
     target_weights: pd.Series,
     equity_history: pd.Series | None = None,
     limits: RiskLimits = RISK,
     asset_class_map: dict[str, str] | None = None,
+    positions: dict[str, Position] | None = None,
 ) -> RiskReport:
     """Apply pre-trade risk limits to a target weight vector.
 
     Limits are applied in a deliberate order, each one only ever reducing
     exposure:
 
+    0. **Position stop-loss / take-profit** — any held symbol past
+       ``stop_loss_pct`` or ``take_profit_pct`` from its own entry price is
+       forced to zero, overriding the signal for that symbol. See
+       :func:`apply_position_stops`.
     1. **Negative weights** are zeroed. The system is long-only.
     2. **Per-asset cap** — no single position above ``max_single_weight``.
     3. **Asset-class cap** — no class above ``max_asset_class_weight``, applied
@@ -112,6 +176,8 @@ def check_and_adjust(
         equity_history: Portfolio equity to date, for drawdown checks.
         limits: Limit set to enforce.
         asset_class_map: Symbol to asset-class mapping.
+        positions: Current broker positions, for the stop-loss/take-profit
+            overlay. Omit for backtesting or when no broker is connected.
 
     Returns:
         A :class:`RiskReport`. ``adjusted`` is what should actually be traded.
@@ -120,6 +186,10 @@ def check_and_adjust(
     asset_class_map = asset_class_map or ASSET_CLASS
     weights = target_weights.astype(float).fillna(0.0).copy()
     breaches: list[str] = []
+
+    # 0. Position-level stop-loss / take-profit.
+    weights, stop_events = apply_position_stops(weights, positions, limits)
+    breaches.extend(stop_events)
 
     # 1. Long-only.
     negative = weights[weights < 0]

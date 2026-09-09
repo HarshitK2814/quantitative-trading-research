@@ -162,14 +162,30 @@ class RiskLimits:
     These are research parameters chosen before results were seen. They are not
     guarantees: a limit expressed in code constrains target weights, it does not
     constrain what the market does between rebalances.
+
+    Portfolio drawdown thresholds and the per-position stop-loss/take-profit
+    were tightened on 2026-09-09 at the user's explicit request, one trading
+    day into live deployment, when the account was already back near flat
+    (-0.57%, -$553 unrealised). The change is dated and logged in
+    research/daily_log.md precisely because it follows a losing day -- so that
+    anyone reading the log later can check whether the new numbers were fitted
+    to that day's move (they were chosen as round, conservative figures, not
+    backfit to it) rather than trusting that claim on faith.
     """
 
     target_annual_vol: float = 0.10
     max_single_weight: float = 0.25
     max_asset_class_weight: float = 0.50
     max_gross_exposure: float = 1.00  # long-only, no leverage
-    drawdown_derisk_threshold: float = 0.15
-    drawdown_halt_threshold: float = 0.25
+    #: Portfolio-level circuit breakers, off the running equity peak.
+    drawdown_derisk_threshold: float = 0.04
+    drawdown_halt_threshold: float = 0.06
+    #: Per-position overlay, off each position's own average entry price.
+    #: Independent of the H1 signal -- this is an execution-layer protection,
+    #: not part of the pre-registered strategy, and is applied identically
+    #: regardless of what the signal wants to do with that symbol.
+    stop_loss_pct: float = 0.08
+    take_profit_pct: float = 0.20
     min_trade_notional_usd: float = 50.0  # suppress dust trades
 
 

@@ -351,6 +351,20 @@ deployment and deployed anyway as a forward test.
     honest rows. `load_snapshots` now deduplicates by date keeping the last,
     with a flag to inspect the raw audit trail. The file stays append-only.
 
+22. **Risk thresholds tightened 2026-09-09, one trading day into live
+    deployment, at the user's explicit request, after a -0.57%
+    (-$553 unrealised) first day.** Portfolio drawdown de-risk moved from -15%
+    to -4%, halt from -25% to -6%. A new execution-layer overlay was added:
+    per-position stop-loss (-8%) and take-profit (+20%) off each position's
+    own entry price, independent of the H1 signal (`apply_position_stops` in
+    `src/risk.py`). Full rationale, the parameter history table, and the
+    explicit tradeoffs (this does not mean "no more red days"; it changes what
+    the live P&L series can be read as evidence of) are in
+    `docs/risk_management.md` rather than repeated here. Recorded on the same
+    day it was requested, immediately after a losing day, specifically so the
+    timing is visible and checkable rather than something to notice later.
+    159 tests pass, ruff clean.
+
 **Decisions**
 
 - **Dry run is the default.** `--execute` must be passed explicitly, so an

@@ -143,7 +143,9 @@ def main() -> None:
         print(f"\nSignal formed from data through {signal_date.date()} "
               f"(one-bar lag already applied).")
 
-        report = check_and_adjust(raw_weights, equity_history=equity_history)
+        report = check_and_adjust(
+            raw_weights, equity_history=equity_history, positions=positions
+        )
         print(report.summary())
 
         selected = report.adjusted[report.adjusted > 0].sort_values(ascending=False)

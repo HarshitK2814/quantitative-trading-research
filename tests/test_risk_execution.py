@@ -89,7 +89,8 @@ def test_risk_engine_never_increases_exposure() -> None:
 
 
 def test_drawdown_derisk_halves_exposure() -> None:
-    equity = pd.Series([100.0, 120.0, 100.0])  # -16.7% from peak
+    """Tightened 2026-09-09: de-risk at -4%, so a -5.83% draw is derisk-only."""
+    equity = pd.Series([100.0, 120.0, 113.0])  # -5.83% from peak
     report = check_and_adjust(pd.Series({"SPY": 0.2, "TLT": 0.2}),
                               equity_history=equity)
     assert report.adjusted.sum() == pytest.approx(0.2)  # halved from 0.4
@@ -98,12 +99,56 @@ def test_drawdown_derisk_halves_exposure() -> None:
 
 
 def test_drawdown_halt_removes_all_exposure() -> None:
-    equity = pd.Series([100.0, 120.0, 85.0])  # -29.2% from peak
+    """Tightened 2026-09-09: halt at -6%, well past a -7.5% draw."""
+    equity = pd.Series([100.0, 120.0, 111.0])  # -7.5% from peak
     report = check_and_adjust(pd.Series({"SPY": 0.2, "TLT": 0.2}),
                               equity_history=equity)
     assert report.adjusted.sum() == pytest.approx(0.0)
     assert report.halted
     assert any("HALT" in b for b in report.breaches)
+
+
+def test_position_stop_loss_forces_exit_regardless_of_signal() -> None:
+    """A position down past stop_loss_pct is zeroed even if the signal wants it."""
+    positions = {
+        "XLE": Position(symbol="XLE", qty=100, market_value=5500.0,
+                        avg_entry_price=64.0, current_price=55.0,
+                        unrealised_pl=-900.0),  # -14.1%, past 8% stop
+    }
+    report = check_and_adjust(
+        pd.Series({"XLE": 0.2, "SPY": 0.2}), positions=positions
+    )
+    assert report.adjusted["XLE"] == 0.0
+    assert report.adjusted["SPY"] == pytest.approx(0.2)
+    assert any("STOP-LOSS" in b and "XLE" in b for b in report.breaches)
+
+
+def test_position_take_profit_locks_in_gain() -> None:
+    positions = {
+        "QQQ": Position(symbol="QQQ", qty=27, market_value=20000.0,
+                        avg_entry_price=717.91, current_price=900.0,
+                        unrealised_pl=4900.0),  # +25.4%, past 20% take-profit
+    }
+    report = check_and_adjust(pd.Series({"QQQ": 0.2}), positions=positions)
+    assert report.adjusted["QQQ"] == 0.0
+    assert any("TAKE-PROFIT" in b and "QQQ" in b for b in report.breaches)
+
+
+def test_position_within_band_is_untouched_by_stops() -> None:
+    positions = {
+        "IWM": Position(symbol="IWM", qty=67, market_value=19800.0,
+                        avg_entry_price=295.86, current_price=290.0,
+                        unrealised_pl=-392.0),  # -2.0%, inside the 8% band
+    }
+    report = check_and_adjust(pd.Series({"IWM": 0.2}), positions=positions)
+    assert report.adjusted["IWM"] == pytest.approx(0.2)
+    assert report.breaches == []
+
+
+def test_no_positions_skips_stop_check() -> None:
+    weights = pd.Series({"SPY": 0.2})
+    report = check_and_adjust(weights, positions=None)
+    assert report.adjusted["SPY"] == pytest.approx(0.2)
 
 
 def test_no_drawdown_at_a_new_high() -> None:
