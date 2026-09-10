@@ -1,0 +1,18 @@
+% ============================================================================
+% Resume entry for the quantitative trading research project.
+%
+% Placement: FIRST item in the Projects section, above the four existing
+% replication projects. Rationale in admissions/resume_framing.md.
+%
+% Every number below is verifiable in the public repository. Nothing here
+% claims profitability, and nothing claims a strategy works -- both because
+% neither is true and because the credibility of the entry is the point.
+% ============================================================================
+
+\noindent\textbf{Pre-Registered Quantitative Trading Research \& Live Paper Deployment} \hfill \href{https://github.com/HarshitK2814/quantitative-trading-research}{[GitHub]}
+\begin{itemize}
+    \item Built a research framework enforcing \textbf{pre-registration}: hypotheses, parameters, and rejection rules committed to Git \textit{before} any backtest, with chronological train/validation/test splits and a one-touch rule on the holdout.
+    \item \textbf{Rejected two of my own strategies by pre-declared criteria} -- cross-sectional momentum (net Sharpe 0.47, bootstrap CI spanning zero, \textbf{36\%} of parameter grid beating benchmark vs a 60\% threshold), and a trend strategy that passed every in-sample test (Sharpe \textbf{0.74}, Newey--West \textbf{t = 2.82}, 100\% of grid) yet \textbf{failed validation} (Sharpe 0.21) and lost \textbf{12.7\%} in the COVID crash it was meant to hedge.
+    \item Engineered a \textbf{vectorised backtester} with one-bar-lag look-ahead prevention verified by \textbf{mutation-tested} bias detectors, \textbf{Newey--West} HAC \textit{t}-statistics, \textbf{stationary-bootstrap} Sharpe CIs, transaction-cost sweeps (0--20bps), and explicit multiple-testing accounting. \textbf{200+ unit tests}.
+    \item Deployed \textbf{live paper trading} (Alpaca API, hard paper-only interlock) with automated daily execution, a pre-trade risk engine (drawdown circuit breakers, per-position stops, asset-class caps), broker-state reconciliation, slippage measurement, and an append-only audit trail; extended to a \textbf{protective-put options overlay}.
+\end{itemize}
