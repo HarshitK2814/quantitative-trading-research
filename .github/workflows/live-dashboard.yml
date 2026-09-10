@@ -1,0 +1,77 @@
+# Publishes the public track-record dashboard with live account data.
+#
+# Why this runs in CI rather than in the page:
+# the Alpaca key must never reach the browser. An API key in page source is
+# readable by every visitor, and Alpaca keys can place and cancel orders, not
+# merely read state. Here the key lives in repository secrets, is used only by
+# scripts/fetch_live_data.py, and only sanitised read-only output (balances,
+# positions, price history) is ever published.
+#
+# Deployment is via the Pages *artifact* mechanism, not a branch commit, so
+# refreshing the dashboard every few minutes adds zero commits to main and the
+# research history stays readable.
+
+name: Live dashboard
+
+on:
+  schedule:
+    # Every 15 minutes during US market hours (13:30-20:00 UTC covers
+    # 09:30-16:00 ET in EDT; the extra hour covers EST after November).
+    - cron: "*/15 13,14,15,16,17,18,19,20,21 * * 1-5"
+    # Once more after the close, so the page settles on final daily figures.
+    - cron: "30 21 * * 1-5"
+  workflow_dispatch:        # manual trigger, for testing
+  push:
+    branches: [main]
+    paths:
+      - "docs/dashboard.html"
+      - "scripts/fetch_live_data.py"
+      - ".github/workflows/live-dashboard.yml"
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never let two deploys race; keep the newest.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install --quiet requests
+
+      - name: Fetch live account data
+        env:
+          ALPACA_API_KEY_ID: ${{ secrets.ALPACA_API_KEY_ID }}
+          ALPACA_API_SECRET_KEY: ${{ secrets.ALPACA_API_SECRET_KEY }}
+          LIVE_JSON_PATH: _site/live.json
+        run: python scripts/fetch_live_data.py
+
+      - name: Assemble site
+        run: |
+          cp docs/dashboard.html _site/index.html
+          # Keep the static journal-derived page reachable as a fallback for
+          # anyone who wants the non-JavaScript version.
+          if [ -f docs/index.html ]; then cp docs/index.html _site/static.html; fi
+          ls -la _site
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - id: deploy
+        uses: actions/deploy-pages@v4
