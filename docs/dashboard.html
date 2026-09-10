@@ -230,6 +230,23 @@ const signCls = n => n > 0 ? "pos" : (n < 0 ? "neg" : "");
 
 let DATA = null, RANGE = "1D";
 
+// ---------------------------------------------------------------------------
+// Feed configuration.
+//
+// FEED_URL points at the static JSON published by GitHub Actions, which
+// regenerates every 5 minutes (Actions' cron floor). Set LIVE_PROXY to a
+// credential-holding proxy endpoint (see cloudflare/worker.js) to get
+// per-second updates instead; the page then polls that and falls back to the
+// static feed if it is unreachable.
+//
+// Polling faster than the feed regenerates gains nothing, so POLL_MS is tied
+// to whichever source is actually in use rather than set to an arbitrary
+// number that would just re-fetch identical bytes.
+// ---------------------------------------------------------------------------
+const LIVE_PROXY = null;                 // e.g. "https://xxx.workers.dev/feed"
+const FEED_URL   = LIVE_PROXY || "./live.json";
+const POLL_MS    = LIVE_PROXY ? 1000 : 10000;
+
 function relTime(iso){
   const s = Math.max(0, (Date.now() - new Date(iso).getTime())/1000);
   if (s < 90) return Math.round(s) + "s ago";
@@ -365,13 +382,24 @@ function render(){
   drawChart();
 }
 
+async function fetchFeed(url){
+  const r = await fetch(url + (url.includes("?") ? "&" : "?") + "t=" + Date.now(),
+                        {cache:"no-store"});
+  if(!r.ok) throw new Error("HTTP " + r.status);
+  return r.json();
+}
+
 async function load(){
   try{
-    const r = await fetch("./live.json?t=" + Date.now(), {cache:"no-store"});
-    if(!r.ok) throw new Error("HTTP " + r.status);
-    DATA = await r.json();
+    DATA = await fetchFeed(FEED_URL);
     render();
   }catch(e){
+    // A proxy outage must not blank the page -- fall back to the static feed,
+    // which is always present because Actions publishes it alongside the page.
+    if (LIVE_PROXY){
+      try { DATA = await fetchFeed("./live.json"); render(); return; }
+      catch(_){ /* fall through to the notice below */ }
+    }
     $("equity").textContent = "—";
     $("delta").innerHTML = '<span class="muted">Live feed unavailable — the ' +
       'committed CSV journals linked below remain the source of record.</span>';
@@ -387,9 +415,11 @@ document.querySelectorAll(".ranges button").forEach(b => {
   });
 });
 window.addEventListener("resize", () => { if (DATA) drawChart(); });
-setInterval(load, 60000);                                   // poll the feed
+setInterval(load, POLL_MS);
+// Tick the "updated Ns ago" label every second regardless of poll rate, so a
+// stale feed is visibly stale rather than silently frozen.
 setInterval(() => { if (DATA) $("updated").textContent =
-  relTime(DATA.generated_at); }, 15000);                    // keep "ago" honest
+  relTime(DATA.generated_at); }, 1000);
 load();
 </script>
 </body></html>

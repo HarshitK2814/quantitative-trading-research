@@ -1,0 +1,15 @@
+# Cloudflare Worker config for the per-second live feed.
+# Deploy:  wrangler deploy
+# Secrets: wrangler secret put ALPACA_API_KEY_ID
+#          wrangler secret put ALPACA_API_SECRET_KEY
+#
+# Credentials are NEVER placed in this file -- they are set as Worker secrets,
+# which is the whole point of routing the feed through a Worker rather than
+# letting the page call Alpaca directly.
+
+name = "paper-trading-feed"
+main = "worker.js"
+compatibility_date = "2026-01-01"
+
+[observability]
+enabled = true

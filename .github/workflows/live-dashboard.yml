@@ -15,9 +15,12 @@ name: Live dashboard
 
 on:
   schedule:
-    # Every 15 minutes during US market hours (13:30-20:00 UTC covers
-    # 09:30-16:00 ET in EDT; the extra hour covers EST after November).
-    - cron: "*/15 13,14,15,16,17,18,19,20,21 * * 1-5"
+    # Every 5 minutes during US market hours -- GitHub's cron floor. Actions
+    # cron is also best-effort and can run late under load, so the page treats
+    # the feed's own timestamp as truth rather than assuming this cadence.
+    # 13:30-21:00 UTC covers 09:30-16:00 ET in EDT; the extra hour covers EST
+    # after the November clock change.
+    - cron: "*/5 13,14,15,16,17,18,19,20,21 * * 1-5"
     # Once more after the close, so the page settles on final daily figures.
     - cron: "30 21 * * 1-5"
   workflow_dispatch:        # manual trigger, for testing
