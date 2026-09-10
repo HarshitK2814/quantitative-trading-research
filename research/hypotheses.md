@@ -385,3 +385,45 @@ method agreed before the first hedge is placed, (c) explicit sign-off that
 this sleeve's results will be read as a forward test with no backtest prior,
 never presented as validated the way H1-H6 are.
 
+---
+
+### Amendment to H9 — external prior located after deployment (2026-09-10, same day)
+
+**This amends the *expectation*, not the specification.** H9's spec above is
+unchanged and the live position stays open. What changed is that a strong
+external prior was found *after* the hedge was placed but *before* any live
+result exists, and pre-registration discipline requires recording it now
+rather than after the outcome is known.
+
+H9's pre-registration stated that no historical backtest was possible because
+free options data does not exist. That remains true of *our* ability to test
+it. It was incomplete as a claim about available *evidence*: AQR ran this
+backtest with paid OptionMetrics data and published the result.
+
+**AQR (Ilmanen, Thapar, Tummala & Villalon, *Tail Risk Hedging: Contrasting
+Put and Trend Strategies*, July 2020)** tested buying a **5% OTM one-month
+S&P 500 index put, rolled at expiry**, over **1985-2020**. H9 as deployed buys
+a ~5% OTM SPY put at 21-35 DTE, rolled inside 14 DTE. These are effectively
+the same strategy.
+
+Their result, scaled to 10% volatility: geometric mean **−6.4%**, Sharpe
+**−0.61**, max drawdown **−92%**, equity correlation −0.64 — and those Put
+figures are **gross of trading costs and fees**, while their comparison
+trend-following strategy (+8.7%, Sharpe +0.84) is reported net of costs.
+
+**Revised prior, recorded before H9's live result exists:** the expected
+outcome of H9 over any period without a severe equity drawdown is a
+**persistent premium bleed**, and the expected long-run return of this
+specification is **negative**. If the live forward test shows exactly that,
+it is the *predicted* result and must not be reported as a surprise, a bug, or
+a reason to retune the spec. If it shows something else over a four-month
+window, that is far more likely to be a small sample than a refutation of 35
+years of evidence.
+
+**Insurance that is never claimed on is not a failed hedge** — that framing
+was already committed in H9's original text and is reaffirmed here, so it
+cannot look like a rationalisation invented after seeing a loss.
+
+See `research/institutional_landscape.md` §6 for the full evidence and the
+proposed follow-up comparison (H10: put versus trend as drawdown mitigation).
+

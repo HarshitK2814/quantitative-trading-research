@@ -545,12 +545,91 @@ deployment and deployed anyway as a forward test.
 
     203 tests pass, ruff clean.
 
+29. **Institutional-landscape research, 2026-09-10. The premise was wrong, and
+    the correction produced the most useful finding of the day.** The request
+    was to read ~50 firms' SEC filings for trading methodology. Verified
+    against primary sources that filings do not contain methodology: Virtu's
+    FY2025 10-K (a *public* HFT market maker, the most disclosure-bound firm
+    in the space) describes its edge only as "proprietary"; a Form ADV Item 8
+    "Methods of Analysis" section gives a strategy *category*, no parameters.
+    Full note in `research/institutional_landscape.md`.
+
+    **Structural finding, from the data rather than assumed:** the fastest
+    firms disclose least, and it is not evasion. Jane Street, Citadel
+    Securities GP, Virtu Financial BD, Tower Research and Wolverine file
+    **13F-NT** (a notice: no holdings detail), while Renaissance, Two Sigma,
+    Bridgewater, Millennium, AQR, Qube and Voleon file **13F-HR** (actual
+    positions). 13F is a quarter-end snapshot filed 45 days late; a market
+    maker whose inventory turns over in seconds holds nothing at a quarter
+    boundary that reflects how it earns. No US filing has a sampling
+    frequency capable of representing an HFT strategy.
+
+    **Method note worth keeping:** the first verification run returned zero
+    matches for all 53 firms -- which looked like a finding and was actually
+    SEC returning HTTP 403 ("Your Request Originates from an Undeclared
+    Automated Tool") to an undeclared scraper. Caught only because the result
+    contradicted a filing fetched by hand minutes earlier. **A zero result
+    needs the same scepticism as a surprising positive one.** Rebuilt against
+    the bulk EDGAR registry (1,058,349 filer entries, one download) plus
+    `data.sec.gov`'s structured API; script committed as
+    `scripts/verify_institutional_filings.py` with both its failure modes
+    documented in the docstring. Name-matching noise is disclosed in the note
+    rather than cleaned up silently (a "Susquehanna" search matches a radio
+    holding company).
+
+    **Also recorded: a naming trap.** The Form ADV initially surfaced for
+    "Renaissance" belongs to *Renaissance Investment Management* (reninv.com),
+    a traditional Cincinnati asset manager -- not Renaissance Technologies.
+    Search engines conflate them. Resolve firms to CIK/CRD, never to name.
+
+30. **AQR's published research directly contradicts H9's premise -- found
+    hours after deploying H9, and recorded before any live result exists.**
+    H9 was pre-registered stating no backtest was possible because free
+    options data doesn't exist. True of *our* ability to test it; incomplete
+    as a claim about available evidence. AQR (Ilmanen, Thapar, Tummala &
+    Villalon, July 2020) backtested **buying a 5% OTM one-month S&P 500 put
+    rolled at expiry, 1985-2020** -- effectively identical to H9's deployed
+    spec (5% OTM SPY put, 21-35 DTE, rolled inside 14 DTE).
+
+    Their result, scaled to 10% vol: geometric mean **-6.4%/yr**, Sharpe
+    **-0.61**, max drawdown **-92%**, equity correlation -0.64 -- **gross of
+    trading costs and fees**, while their comparison multi-asset trend
+    strategy returned +8.7% (Sharpe +0.84) *net* of costs. Mechanism given:
+    implied vol and implied negative skew systematically exceed subsequent
+    realisations, so the protection buyer pays a risk premium on average.
+    Their words on crisis behaviour: "Put did make timely gains in sharp bear
+    markets but spent those gains soon after by buying more expensive puts."
+
+    **H9's prior is amended (not its spec) in `research/hypotheses.md`**: the
+    expected long-run return of this specification is now explicitly recorded
+    as **negative**, and premium bleed in a calm period is the *predicted*
+    outcome, not a surprise to be discovered in December. The position stays
+    open -- switching it off on the day it was deployed would be exactly the
+    reactive strategy-swapping this project declined to do in finding #25, and
+    a pre-registered forward test whose prior is now on record is a *better*
+    experiment than one with a vague prior.
+
+    **The genuinely interesting consequence:** AQR's claim is that trend
+    following is a better crisis hedge than puts -- and H2 (time-series trend)
+    is already pre-registered here and still un-backtested. That sets up
+    **H10 (put vs trend as drawdown mitigation)** with a published
+    institutional prior committed in advance, which is a sharper question
+    than either hypothesis alone. It also bears on the earlier "no more than
+    5-7% drawdown" request: the evidence suggests the cheapest effective
+    drawdown control in this space is trend exposure, not purchased
+    optionality.
+
 **Next**
 
 - Daily: automatic via Windows Task Scheduler (`PaperTradingDailyRun`,
   21:30 IST) -- equity rebalance, H9 hedge check, journals, commits, and
   pushes with no manual step. Check `logs/live_run.log` occasionally, not
   daily.
-- Research continues: H2 time-series trend; H6's own backtest before any
-  live short exposure is considered; H7 (extended universe) and H8 (crypto)
-  implementation, in that order.
+- **H2 (time-series trend) is now the highest-value next backtest**, having
+  become the comparison arm for H9 rather than just another hypothesis in
+  the queue.
+- Then: pre-register H10 (put vs trend), H6's backtest before any live short
+  exposure, H7 (extended universe), H8 (crypto).
+- Check the Frazzini/Israel/Moskowitz trading-cost estimates against this
+  project's 10bps headline assumption when writing
+  `research/transaction_cost_model.md`.
