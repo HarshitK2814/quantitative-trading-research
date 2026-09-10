@@ -43,6 +43,16 @@ if ($LASTEXITCODE -eq 0) {
     Add-Content -Path $logFile -Value "===== HEDGE RUN FAILED (exit $LASTEXITCODE) -- continuing to commit/push the equity leg regardless ====="
 }
 
+# Regenerate the public track-record page from the freshly-written journals.
+# Non-fatal for the same reason as the hedge leg: a rendering problem must not
+# block the primary evidence trail from being committed.
+cmd.exe /c "`"$python`" scripts\build_dashboard.py >> `"$logFile`" 2>&1"
+if ($LASTEXITCODE -eq 0) {
+    Add-Content -Path $logFile -Value "===== DASHBOARD OK ====="
+} else {
+    Add-Content -Path $logFile -Value "===== DASHBOARD FAILED (exit $LASTEXITCODE) -- continuing ====="
+}
+
 # ---------------------------------------------------------------------------
 # Auto-commit + push -- the journal CSVs only.
 #
@@ -53,7 +63,7 @@ if ($LASTEXITCODE -eq 0) {
 # append-only evidence files this project already treats as the record are
 # staged.
 # ---------------------------------------------------------------------------
-cmd.exe /c "git add portfolio/trades.csv portfolio/daily_snapshot.csv portfolio/hedge_trades.csv >> `"$logFile`" 2>&1"
+cmd.exe /c "git add portfolio/trades.csv portfolio/daily_snapshot.csv portfolio/hedge_trades.csv docs/index.html >> `"$logFile`" 2>&1"
 
 $staged = git diff --cached --name-only
 if (-not $staged) {
@@ -67,7 +77,7 @@ auto: daily paper-trading journal update $dateOnly
 
 Automated nightly commit via scripts/run_live_scheduled.ps1 (Windows
 Task Scheduler, task PaperTradingDailyRun). No code changes -- journal
-CSVs only (equity trades/snapshots + H9 hedge journal).
+CSVs and the generated track-record page.
 "@ | Set-Content -Path $commitMsgFile -Encoding ascii
 
 cmd.exe /c "git commit -F `"$commitMsgFile`" >> `"$logFile`" 2>&1"
