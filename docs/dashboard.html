@@ -243,7 +243,7 @@ let DATA = null, RANGE = "1D";
 // to whichever source is actually in use rather than set to an arbitrary
 // number that would just re-fetch identical bytes.
 // ---------------------------------------------------------------------------
-const LIVE_PROXY = null;                 // e.g. "https://xxx.workers.dev/feed"
+const LIVE_PROXY = "https://paper-trading-feed.harshitk2814.workers.dev/feed";
 const FEED_URL   = LIVE_PROXY || "./live.json";
 const POLL_MS    = LIVE_PROXY ? 1000 : 10000;
 
@@ -389,9 +389,24 @@ async function fetchFeed(url){
   return r.json();
 }
 
+let STATIC_EXTRAS = null;   // chart series + order history, fetched rarely
+
+async function loadExtras(){
+  // The 1s proxy carries only fast-changing state. History and orders move
+  // slowly, so they come from the static feed and are refreshed sparingly
+  // rather than re-sent 3,600 times an hour.
+  try { STATIC_EXTRAS = await fetchFeed("./live.json"); } catch(_){}
+}
+
 async function load(){
   try{
     DATA = await fetchFeed(FEED_URL);
+    if (STATIC_EXTRAS){
+      if (!DATA.history || !Object.keys(DATA.history).length)
+        DATA.history = STATIC_EXTRAS.history;
+      if (!DATA.orders || !DATA.orders.length)
+        DATA.orders = STATIC_EXTRAS.orders;
+    }
     render();
   }catch(e){
     // A proxy outage must not blank the page -- fall back to the static feed,
@@ -415,11 +430,12 @@ document.querySelectorAll(".ranges button").forEach(b => {
   });
 });
 window.addEventListener("resize", () => { if (DATA) drawChart(); });
+loadExtras().then(load);
+setInterval(loadExtras, 300000);   // static extras: every 5 min, matching CI
 setInterval(load, POLL_MS);
 // Tick the "updated Ns ago" label every second regardless of poll rate, so a
 // stale feed is visibly stale rather than silently frozen.
 setInterval(() => { if (DATA) $("updated").textContent =
   relTime(DATA.generated_at); }, 1000);
-load();
 </script>
 </body></html>
