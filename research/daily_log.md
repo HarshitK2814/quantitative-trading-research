@@ -619,17 +619,117 @@ deployment and deployed anyway as a forward test.
     drawdown control in this space is trend exposure, not purchased
     optionality.
 
+31. **H2 (time-series trend) backtested 2026-09-10: PASSES train decisively,
+    then FAILS validation. Not deployed.** `scripts/run_h2.py`.
+
+    **TRAIN 2007-2016, net 10bps** -- the strongest train result this project
+    has produced:
+
+    | | Ann ret | Vol | Sharpe | Max DD | Turnover | t (NW) |
+    |---|---|---|---|---|---|---|
+    | H2 trend | 7.69% | 9.76% | **0.740** | **-13.7%** | 0.99x | **2.82** |
+    | H1 momentum | 7.49% | 16.94% | 0.472 | -39.8% | 6.34x | 1.73 |
+    | EW benchmark | 7.82% | 17.16% | 0.486 | -45.4% | 0.45x | 1.83 |
+
+    Bootstrap Sharpe CI **[0.221, 1.305] excludes zero** (P(Sharpe>0)=0.998) --
+    the first strategy here to manage that. t=2.82 is also the first thing in
+    this project to clear t=2.0, against the earlier finding that *no*
+    benchmark reached it over ten years. H5 grid: **100% of 8 configurations
+    beat the benchmark** (threshold 60%), median grid Sharpe 0.652. Turnover
+    0.99x makes it nearly cost-insensitive (Sharpe 0.750 at 0bps -> 0.730 at
+    20bps), unlike H1 which bled from 6.34x turnover.
+
+    **My pre-registered prior was right this time, both halves:** the gain is
+    entirely in the denominator (vol 9.76% vs 17.16%, drawdown -13.7% vs
+    -45.4%) while the numerator is slightly *worse* (7.69% vs 7.82%). Recorded
+    for contrast with H1, where the prior was half wrong.
+
+    **The pre-registered falsification test fired.** H2's own hypothesis text
+    demanded: "if H2's advantage is concentrated in 2008-09 and March 2020, it
+    is a crisis-alpha strategy... this must be checked by excluding those
+    windows." Excluding 2008-09: H2 Sharpe 0.809 vs **EW 0.844** -- the
+    benchmark is *better*. The entire train-period edge is the crisis (crisis
+    window: H2 +0.36 vs EW -0.05, H2 maxDD -6.1% vs EW -44.5%). H2 is crisis
+    alpha, exactly as the pre-registration warned to check.
+
+    **VALIDATION 2017-2020 -- the strategy fails:**
+
+    | | Ann ret | Sharpe | Max DD | t (NW) |
+    |---|---|---|---|---|
+    | H2 trend | 3.06% | **0.211** | -22.3% | 0.43 |
+    | H1 momentum | 11.71% | 0.670 | -24.6% | 1.50 |
+    | EW benchmark | 12.91% | 0.735 | -31.2% | 1.52 |
+    | 60/40 | 13.80% | 1.152 | -18.4% | 2.46 |
+
+    Validation Sharpe CI **[-0.593, 1.347] includes zero**. H2 underperforms
+    every benchmark, including the passive one, and is beaten outright by
+    plain 60/40.
+
+    **The decisive detail -- the hedge failed in the one crisis it faced.**
+    COVID crash (2020-02-15 to 2020-04-15) cumulative: **H2 -12.67%**,
+    H1 -7.58%, EW -15.86%, 60/40 -4.26%. A strategy whose entire train-period
+    case was crisis protection lost 12.7% in the validation period's only
+    crisis, barely better than passive and worse than the momentum strategy
+    already rejected.
+
+    **Diagnosed cause (mechanism, not excuse):** 2008-09 was a slow-rolling
+    decline; a 252-day filter rebalanced monthly had months to step aside.
+    COVID fell ~34% in five weeks -- faster than a monthly rebalance can
+    respond. The train-period result was a property of *how that particular
+    crisis unfolded*, not of the strategy. This is what an overfitted-to-regime
+    result looks like even when nothing was fitted: the parameters were
+    pre-registered and never touched, and the strategy still failed
+    out-of-sample. Passing an in-sample stability test (100% of grid!) is not
+    evidence of out-of-sample robustness.
+
+32. **Correction to finding #30's implication -- recorded because it cuts
+    against what was written hours earlier.** Finding #30 reported AQR's
+    result that trend-following beats put-buying as crisis protection, and
+    promoted H2 as H9's comparison arm on that basis. **That inference does
+    not survive this project's own data, and the reason is a specification
+    gap I should have flagged when writing #30.**
+
+    AQR's "Trend" is multi-asset: dozens of futures across equity indices,
+    government bonds, currencies and commodities, at 1-/3-/12-month horizons,
+    **able to go short**, volatility-weighted. Their own footnote says that in
+    2020Q1 "Trend actually lost money in equities, but gains in other asset
+    classes resulted in an overall positive return" -- i.e. their crisis
+    protection came from *bonds, currencies and gold, and from short
+    positions*, not from equity trend.
+
+    **This project's H2 is long-only, equity/bond ETFs, monthly, and can only
+    step into cash.** It has none of the machinery that produced AQR's result.
+    The COVID number (-12.67%) is precisely the failure their footnote
+    predicts for the equity-only portion. **Citing AQR's Trend result as
+    support for deploying this H2 would have been a category error** --
+    comparing a named strategy class to a materially weaker implementation of
+    it. Logged rather than quietly dropped.
+
+    Consequence for **H10** (put vs trend, proposed in #30): still worth
+    pre-registering, but its stated prior must now be that *this* project's
+    long-only trend implementation is **not** a credible substitute for
+    either AQR's Trend or for H9's puts, and a fair test would require
+    building multi-asset short-capable trend first (which needs H6's short
+    infrastructure, still not built).
+
+    **H9 stays live and unchanged.** Nothing here rescues it -- AQR's -6.4%/yr
+    put finding stands -- but the alternative that looked better an hour ago
+    does not, on our own data, work as implemented here.
+
 **Next**
 
 - Daily: automatic via Windows Task Scheduler (`PaperTradingDailyRun`,
   21:30 IST) -- equity rebalance, H9 hedge check, journals, commits, and
   pushes with no manual step. Check `logs/live_run.log` occasionally, not
   daily.
-- **H2 (time-series trend) is now the highest-value next backtest**, having
-  become the comparison arm for H9 rather than just another hypothesis in
-  the queue.
-- Then: pre-register H10 (put vs trend), H6's backtest before any live short
-  exposure, H7 (extended universe), H8 (crypto).
-- Check the Frazzini/Israel/Moskowitz trading-cost estimates against this
-  project's 10bps headline assumption when writing
-  `research/transaction_cost_model.md`.
+- **No new live sleeve.** H1 remains the only equity sleeve; H2 is rejected on
+  validation and will not be deployed. The live book is unchanged by today's
+  research, which is the correct outcome when a candidate fails.
+- H7 (extended universe) is now the most promising remaining diversification
+  route, because H2's failure was partly a *breadth* failure -- a long-only
+  16-ETF universe cannot express the cross-asset positioning that makes
+  institutional trend work.
+- Then: H8 (crypto), H6's backtest (which would also unlock the short leg H2
+  needs to be tested fairly), H10 pre-registration with the corrected prior.
+- Check Frazzini/Israel/Moskowitz trading-cost estimates against the 10bps
+  headline when writing `research/transaction_cost_model.md`.
