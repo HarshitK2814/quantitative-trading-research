@@ -460,10 +460,44 @@ deployment and deployed anyway as a forward test.
     step is skipped, logged clearly in `logs/live_run.log` for the next
     manual session to resolve.
 
+27. **Three more hypotheses pre-registered 2026-09-10, at the user's request
+    ("why are we on just ETFs, why not diversify and hedge with options...
+    FX or crypto or commodity or futures or swaps").** Answered the asset-class
+    question honestly before pre-registering anything: Alpaca (the existing
+    account, no new broker) supports equities/ETFs, options, and crypto --
+    not FX or futures. Swaps have no retail-accessible market at all, free or
+    paid, so that one was declined outright rather than scoped down. FX was
+    offered (a second broker's free demo, e.g. OANDA) but not pursued this
+    round given the added complexity of a second unattended integration for
+    one more asset class.
+
+    - **H7** (extended universe: EFA, EEM, USO, HYG added to a *separate*
+      `UNIVERSE_EXT`, not modifying the original 16-name `UNIVERSE` that
+      every H1-H6 result was tested against).
+    - **H8** (crypto time-series momentum, BTC-USD/ETH-USD, H2's rule applied
+      to crypto -- pre-registered with an explicit caveat that the free
+      yfinance sample is far shorter (2014-/2017- onward) and statistically
+      weaker than the equity universe's 2007 start, and that live crypto
+      trading is 24/7 so `run_live.py`'s market-hours gating does not apply
+      and needs separate handling before any live crypto sleeve exists).
+    - **H9** (options protective-hedge overlay) -- flagged as fundamentally
+      different from H1-H8: no free historical options-chain data exists back
+      to 2007 (CBOE DataShop / OptionMetrics are paid), so this **cannot** go
+      through a backtest at all. It would deploy directly as a forward test
+      with no historical validation behind it, which must be disclosed every
+      time this hypothesis's results are reported, not just once.
+
+    **None of H7-H9 are implemented or live yet** -- this is pre-registration
+    only, exactly the same discipline H1 got before any code ran against it.
+    Implementation is next, not rushed into the same session as the
+    pre-registration, so each can get its own proper build-and-verify pass
+    instead of three new asset classes landing half-tested at once.
+
 **Next**
 
 - Daily: automatic via Windows Task Scheduler (`PaperTradingDailyRun`,
   21:30 IST) -- trades, journals, commits, and pushes with no manual step.
   Check `logs/live_run.log` occasionally, not daily.
 - Research continues: H2 time-series trend; H6's own backtest before any
-  live short exposure is considered.
+  live short exposure is considered; H7-H9 implementation (universe
+  extension first -- lowest complexity -- then crypto, then options).

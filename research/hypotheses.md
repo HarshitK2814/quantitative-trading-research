@@ -269,3 +269,119 @@ sleeve (see `src/sleeves.py`). No live short exposure exists yet. Building
 the sleeve mechanism that *could* run it is not the same decision as running
 it, and the two are logged separately.
 
+---
+
+### H7 — Extended universe: international equities, energy, credit (added 2026-09-10, post-hoc)
+
+**Context.** Added at the user's request to test whether the original 16-ETF
+universe under-diversifies the strategy set. The original `UNIVERSE` constant
+in `src/config.py` is **not modified** — every H1-H6 result stays reproducible
+against exactly the universe it was tested on. This hypothesis defines its own
+`UNIVERSE_EXT` and is evaluated independently; it becomes a candidate for a
+live sleeve only if it clears the same bar H1 did.
+
+**Research question.** Does adding international-equity, energy-commodity, and
+credit exposure to the existing 16-name universe improve H1's diversification
+(lower correlation across selectable names → less concentrated top-*k* picks)
+without degrading the Sharpe that made H1 worth testing in the first place?
+
+- **H0:** Running H1's identical signal and construction on the extended
+  universe does not improve the fraction of grid configurations beating
+  equal-weight benchmark (H5's metric) relative to the original 16-name run.
+- **H1 (alternative):** It does, because a broader opportunity set gives the
+  ranking more genuinely diversifying choices instead of repeatedly picking
+  from a narrower, more mutually-correlated equity-sector set.
+
+| Element | Specification |
+|---|---|
+| Added tickers | EFA (developed ex-US equity), EEM (emerging-market equity), USO (crude oil, distinct commodity-futures-linked exposure from XLE's equity-sector energy), HYG (high-yield credit, distinct from TLT's treasury duration exposure). |
+| `UNIVERSE_EXT` | The original 16 plus these 4 = 20 names. Same data source (yfinance), same one-bar-lag discipline, same cost model. |
+| Signal | Identical to H1 — this isolates the effect of the universe, not the signal. |
+| Sample caveat | EEM (inception 2003) and HYG (inception 2007) both have shorter live histories than the original universe's 2007 start on some names; USO's structure changed materially after its 2020 negative-oil-price restructuring, which must be checked for and disclosed if it distorts trailing-return signals across that date, not silently included. |
+
+**Stated prior:** I expect a small diversification benefit and a roughly flat
+or slightly worse net Sharpe, because more selectable names does not fix H1's
+actual diagnosed problem (Sharpe rising with lower concentration, i.e. the
+signal itself adding little) — it just gives the same weak signal more places
+to pick from. If broadening the universe doesn't change *that* underlying
+pattern, this hypothesis should say so plainly rather than be read as "fixing"
+H1.
+
+---
+
+### H8 — Crypto time-series momentum (added 2026-09-10, post-hoc)
+
+**Context.** Alpaca's paper account supports crypto trading (BTC, ETH, and
+others) under the same credentials as the equity/ETF book — no second broker,
+no new cost. Added at the user's request for genuine asset-class diversity
+beyond equities/bonds/commodities-via-ETF.
+
+**Research question.** Does H2's time-series (absolute) momentum rule —
+already pre-registered, not yet backtested — perform differently on crypto
+than on the equity/ETF universe, given crypto's documented higher volatility
+and different market-structure (24/7, no circuit breakers, historically
+higher autocorrelation in trends)?
+
+- **H0:** Time-series trend-following on BTC/ETH does not improve net-of-cost
+  Sharpe over buy-and-hold of the same assets.
+- **H1 (alternative):** It does, plausibly by more than on equities, because
+  crypto's trend persistence and drawdown severity are both larger — bigger
+  trends to capture, bigger crashes to avoid.
+
+| Element | Specification |
+|---|---|
+| Universe | BTC-USD, ETH-USD (Alpaca-tradable, yfinance-covered for the backtest). A third name is added only if it has enough history to backtest meaningfully. |
+| Signal | Identical rule to H2: hold only if trailing 252-day return exceeds the risk-free rate over the same window, else hold cash. |
+| Sample caveat, stated now before any result exists | Free daily history via yfinance starts 2014-09-17 (BTC-USD) and 2017-11-09 (ETH-USD) — a much shorter and more survivorship/regime-narrow sample than the 2007-start equity universe. A crypto backtest here covers at most ~12 and ~9 years respectively, mostly a single secular bull-then-bust regime. Any Sharpe from this sample is **not** comparable in statistical power to H1-H7's 2007-2025 window, and must be reported with that caveat attached every time, not as a footnote once. |
+| Operational note | Crypto markets trade 24/7 with no open/close. `scripts/run_live.py`'s market-hours gating (`broker.clock()`, `is_open`) does not apply to a crypto sleeve and must be handled separately before any live crypto sleeve is deployed — not assumed to just work because the equity code already exists. |
+
+**Stated prior:** I expect this to look better in-sample than H1 or H2 on
+equities, and I am specifically suspicious of that outcome in advance: a
+short sample dominated by one multi-year bull run followed by sharp
+drawdowns is exactly the setup where a trend rule looks artificially good by
+construction. The H5 sub-period stability test (Sharpe by calendar year) is
+mandatory here, not optional, before any positive result is trusted.
+
+---
+
+### H9 — Options protective-hedge overlay, forward-test only, no historical backtest (added 2026-09-10, post-hoc)
+
+**Context and an upfront limitation, stated before anything is built.**
+Rigorous historical options backtesting requires a paid options-chain dataset
+(CBOE DataShop, OptionMetrics); no free equivalent exists back to 2007. This
+hypothesis **cannot** go through the same train/validation/test sequence as
+H1-H8. It is deployed directly as a forward test, exactly like H1's live
+deployment, except H1 at least had a historical backtest behind its live run
+and this does not. Every report of this hypothesis's results must say so.
+
+**Research question.** Does a protective-put (or collar) overlay, sized off
+the live book's own notional exposure, reduce realised drawdown by materially
+more than its cost in premium (negative carry) over the forward-test window?
+This is functionally a more precise, priced alternative to the blunt
+exposure-halving circuit breaker already in `src/risk.py` (see
+`docs/risk_management.md`), which reduces exposure in fixed steps rather than
+buying a specific, known floor.
+
+- **H0:** The realised cost of the hedge (premium paid, net of any collar
+  premium received) exceeds the drawdown it prevented, measured against the
+  unhedged book over the same window.
+- **H1 (alternative):** The hedge earns its cost — drawdown reduction exceeds
+  premium spent, or the hedge is disclosed as a deliberately-accepted
+  insurance cost even when it doesn't (insurance that isn't used is not a
+  failed hedge; that framing must be stated explicitly in any writeup, not
+  retrofitted after seeing whether a crash happened to occur).
+
+| Element | Specification |
+|---|---|
+| Instrument | Exchange-listed US equity index/ETF options via Alpaca's options paper API, priced off Alpaca's live options chain. Underlying: SPY, matched to the book's largest single correlated exposure. |
+| Structure | Protective put initially (simplest, easiest to reason about cost); a collar (short call funding the put) considered as a sensitivity once the plain put's carry cost is measured, not assumed upfront. |
+| Sizing | Notional and strike chosen to target a specific floor (e.g. no more than X% loss on the hedged notional), not chosen after seeing a drawdown, and logged with the reasoning at the time of each roll. |
+| Rebalance / roll | Monthly, matching H1's rebalance cadence, to keep operational complexity bounded. |
+| Disclosed limitations | (1) No historical backtest, as stated above. (2) Alpaca paper options pricing may not perfectly reflect real bid-ask spreads or fill quality on illiquid strikes/expiries — any measured "cost" is a paper-market approximation, same caveat class as H6's short-mechanics disclosure. (3) A forward test through a period with no large drawdown will show the hedge as pure cost with no offsetting benefit — that is not evidence the hedge doesn't work, only that it wasn't tested by the sample period, and must be reported that way. |
+
+**Decision rule for deployment.** Requires: (a) `src/broker.py` extended to
+place options orders (not built yet), (b) a documented cost/carry measurement
+method agreed before the first hedge is placed, (c) explicit sign-off that
+this sleeve's results will be read as a forward test with no backtest prior,
+never presented as validated the way H1-H6 are.
+
