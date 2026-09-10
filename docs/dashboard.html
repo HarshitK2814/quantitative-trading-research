@@ -1,0 +1,395 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Live Paper Trading Track Record — Quantitative Research</title>
+<!--
+  Interactive track-record dashboard.
+
+  Data comes from live.json, published alongside this page by a GitHub Action
+  that holds the Alpaca key in repository secrets. This page NEVER sees a
+  credential: an API key in page source would be readable by every visitor,
+  and Alpaca keys can place and cancel orders, not merely read state.
+
+  No CDN, no chart library, no framework. Everything below is hand-built so
+  the page renders under a locked-down CSP and does not depend on a third
+  party still existing in 2027.
+-->
+<style>
+  :root{
+    --ink:#12161c; --muted:#68707d; --line:#e4e8ee; --bg:#f7f9fb; --card:#fff;
+    --accent:#2f6fb0; --pos:#0f7a55; --neg:#c02a1e; --warn:#8a6a15;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --ink:#e8ecf2; --muted:#98a2b3; --line:#252b35; --bg:#0e1116;
+           --card:#151a21; --accent:#5a9fe0; --pos:#3ec98c; --neg:#f2705f;
+           --warn:#d9b64e; }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+  .wrap{max-width:980px;margin:0 auto;padding:28px 18px 70px}
+  h1{font-size:1.5rem;margin:0 0 2px;letter-spacing:-.02em}
+  h2{font-size:1rem;margin:32px 0 10px;letter-spacing:-.01em}
+  .sub{color:var(--muted);margin:0 0 18px;font-size:.92rem}
+  .banner{background:color-mix(in srgb,var(--warn) 12%,transparent);
+    border:1px solid color-mix(in srgb,var(--warn) 40%,transparent);
+    color:var(--warn);padding:11px 15px;border-radius:9px;font-weight:600;
+    margin-bottom:20px;font-size:.9rem}
+  .hero{background:var(--card);border:1px solid var(--line);border-radius:12px;
+    padding:20px 22px;margin-bottom:14px}
+  .equity{font-size:2.6rem;font-weight:650;letter-spacing:-.03em;
+    font-variant-numeric:tabular-nums;line-height:1.1}
+  .delta{font-size:1.05rem;font-weight:600;font-variant-numeric:tabular-nums;
+    margin-top:2px}
+  .pos{color:var(--pos)} .neg{color:var(--neg)}
+  .dot{display:inline-block;width:8px;height:8px;border-radius:50%;
+    margin-right:5px;vertical-align:middle}
+  .live{background:var(--pos);animation:pulse 2s infinite}
+  .closed{background:var(--muted)}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+  .statusline{color:var(--muted);font-size:.82rem;margin-top:10px}
+  .ranges{display:flex;gap:6px;margin:16px 0 8px}
+  .ranges button{border:1px solid var(--line);background:transparent;
+    color:var(--muted);padding:5px 13px;border-radius:7px;cursor:pointer;
+    font:inherit;font-size:.84rem;font-weight:600;transition:.12s}
+  .ranges button:hover{border-color:var(--accent);color:var(--accent)}
+  .ranges button[aria-pressed="true"]{background:var(--accent);
+    border-color:var(--accent);color:#fff}
+  .chartbox{position:relative}
+  svg.chart{width:100%;height:280px;display:block;touch-action:none}
+  .tip{position:absolute;pointer-events:none;background:var(--card);
+    border:1px solid var(--line);border-radius:7px;padding:6px 10px;
+    font-size:.8rem;font-variant-numeric:tabular-nums;opacity:0;
+    transition:opacity .1s;white-space:nowrap;
+    box-shadow:0 4px 14px rgba(0,0,0,.10)}
+  .grid{display:grid;gap:11px;
+    grid-template-columns:repeat(auto-fit,minmax(148px,1fr));margin:12px 0}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;
+    padding:13px 15px}
+  .card .k{color:var(--muted);font-size:.73rem;text-transform:uppercase;
+    letter-spacing:.05em;font-weight:600}
+  .card .v{font-size:1.22rem;font-weight:620;margin-top:3px;
+    font-variant-numeric:tabular-nums}
+  table{border-collapse:collapse;width:100%;background:var(--card);
+    font-variant-numeric:tabular-nums;font-size:.88rem}
+  th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line)}
+  th{color:var(--muted);font-weight:600;font-size:.72rem;
+    text-transform:uppercase;letter-spacing:.05em}
+  tr:last-child td{border-bottom:none}
+  td.num,th.num{text-align:right}
+  .scroll{overflow-x:auto;border:1px solid var(--line);border-radius:10px}
+  .muted{color:var(--muted)}
+  .note{background:var(--card);border:1px solid var(--line);
+    border-left:3px solid var(--accent);border-radius:9px;padding:13px 16px;
+    margin:12px 0;font-size:.9rem}
+  .tag{display:inline-block;font-size:.68rem;font-weight:700;padding:1px 7px;
+    border-radius:20px;text-transform:uppercase;letter-spacing:.04em;
+    background:color-mix(in srgb,var(--accent) 15%,transparent);
+    color:var(--accent);margin-left:6px;vertical-align:middle}
+  a{color:var(--accent)}
+  ul{padding-left:20px}
+  footer{margin-top:36px;padding-top:16px;border-top:1px solid var(--line);
+    color:var(--muted);font-size:.82rem}
+  code{background:color-mix(in srgb,var(--muted) 16%,transparent);
+    padding:1px 5px;border-radius:4px;font-size:.85em}
+</style></head><body><div class="wrap">
+
+<h1>Live Paper Trading Track Record</h1>
+<p class="sub">Pre-registered quantitative strategy research, executed on a
+simulated brokerage account. Numbers below are pulled directly from the broker
+and refresh automatically.</p>
+
+<div class="banner">⚠ PAPER TRADING — SIMULATED MONEY ONLY. No real capital is
+at risk and none has ever been deposited. This is a research record, not a
+performance claim.</div>
+
+<div class="hero">
+  <div class="equity" id="equity">—</div>
+  <div class="delta" id="delta">—</div>
+  <div class="ranges" role="group" aria-label="Chart range">
+    <button data-r="1D" aria-pressed="true">1D</button>
+    <button data-r="1W" aria-pressed="false">1W</button>
+    <button data-r="1M" aria-pressed="false">1M</button>
+    <button data-r="ALL" aria-pressed="false">ALL</button>
+  </div>
+  <div class="chartbox">
+    <svg class="chart" id="chart" preserveAspectRatio="none"
+         role="img" aria-label="Account equity over the selected range"></svg>
+    <div class="tip" id="tip"></div>
+  </div>
+  <div class="statusline">
+    <span id="mkt"><span class="dot closed"></span>—</span>
+    &nbsp;·&nbsp; updated <span id="updated">—</span>
+    &nbsp;·&nbsp; strategy <code id="strategy">—</code>
+  </div>
+</div>
+
+<div class="grid">
+  <div class="card"><div class="k">Total return</div>
+    <div class="v" id="totret">—</div></div>
+  <div class="card"><div class="k">Today</div>
+    <div class="v" id="dayret">—</div></div>
+  <div class="card"><div class="k">Cash</div>
+    <div class="v" id="cash">—</div></div>
+  <div class="card"><div class="k">Positions</div>
+    <div class="v" id="npos">—</div></div>
+  <div class="card"><div class="k">Starting capital</div>
+    <div class="v" id="startcap">—</div></div>
+</div>
+
+<h2>Open positions</h2>
+<div class="scroll"><table>
+  <thead><tr>
+    <th>Symbol</th><th class="num">Qty</th><th class="num">Avg entry</th>
+    <th class="num">Last</th><th class="num">Value</th>
+    <th class="num">Unrealised P/L</th>
+  </tr></thead>
+  <tbody id="positions"><tr><td colspan="6" class="muted">Loading…</td></tr></tbody>
+</table></div>
+
+<h2>Recent orders</h2>
+<div class="scroll"><table>
+  <thead><tr>
+    <th>Time</th><th>Symbol</th><th>Side</th><th class="num">Qty</th>
+    <th class="num">Fill</th><th>Status</th>
+  </tr></thead>
+  <tbody id="orders"><tr><td colspan="6" class="muted">Loading…</td></tr></tbody>
+</table></div>
+
+<h2>What is actually being traded, and why that matters</h2>
+<div class="note">
+The deployed strategy is <strong>H1, cross-sectional momentum</strong> — which
+this project's own analysis <strong>rejected</strong> on train-period evidence:
+net Sharpe 0.47, a bootstrap confidence interval spanning zero, and 36% of its
+parameter grid beating the benchmark against a pre-declared 60% threshold.
+<br><br>
+It is deployed <em>because</em> it was rejected. Its parameters were committed
+to Git before any backtest existed, so running it forward is a clean test of a
+pre-registered hypothesis rather than a fitted strategy. The question is not
+"does this make money" but "does live experience agree with the rejection?"
+It must never be described as a selected or recommended strategy.
+</div>
+<div class="note">
+A <strong>protective-put options overlay</strong> also runs here
+<span class="tag">no backtest</span> — free options-chain history does not
+exist back to 2007, so it was deployed as an explicitly-labelled forward test.
+Afterwards, AQR's published study of a near-identical specification (5%
+out-of-the-money one-month puts, 1985–2020) was located: <strong>−6.4%
+annualised, Sharpe −0.61</strong>. That prior is recorded in the repository, so
+premium bleed here is the <em>predicted</em> outcome, not a surprise.
+</div>
+<div class="note">
+A trend-following strategy was also tested and <strong>not deployed</strong>:
+it passed every in-sample test (Sharpe 0.74, Newey–West t = 2.82, 100% of its
+parameter grid) and then failed validation (Sharpe 0.21), losing 12.7% in the
+COVID crash it was designed to hedge. The failure and its diagnosis are in the
+research log.
+</div>
+
+<h2>Why you should not simply believe this page</h2>
+<div class="note">
+A self-published dashboard is self-reported, and a sceptical reader is right
+not to take it at face value. What makes this record checkable is not this page
+but the <strong>Git history behind it</strong>: trade journals are committed by
+an automated nightly job, so timestamps are outside the author's control and
+any retroactive edit would appear as a history rewrite. The raw files are
+linked below — read those, not this summary.
+<br><br>
+The page holds <strong>no API credentials</strong>. Data is published by a
+scheduled job that keeps the key server-side, and exposes balances, positions
+and price history only — nothing that could place an order.
+</div>
+
+<h2>Primary sources</h2>
+<ul id="sources">
+  <li><a href="https://github.com/HarshitK2814/quantitative-trading-research/blob/main/portfolio/trades.csv">trades.csv</a> — every order, append-only, intended vs achieved fill</li>
+  <li><a href="https://github.com/HarshitK2814/quantitative-trading-research/blob/main/portfolio/daily_snapshot.csv">daily_snapshot.csv</a> — daily account state</li>
+  <li><a href="https://github.com/HarshitK2814/quantitative-trading-research/blob/main/portfolio/hedge_trades.csv">hedge_trades.csv</a> — options hedge journal</li>
+  <li><a href="https://github.com/HarshitK2814/quantitative-trading-research/blob/main/research/hypotheses.md">hypotheses.md</a> — pre-registered hypotheses with an amendment rule</li>
+  <li><a href="https://github.com/HarshitK2814/quantitative-trading-research/blob/main/research/daily_log.md">daily_log.md</a> — dated research log, including every bug found</li>
+  <li><a href="https://github.com/HarshitK2814/quantitative-trading-research/blob/main/research/institutional_landscape.md">institutional_landscape.md</a> — what institutional firms actually disclose</li>
+</ul>
+
+<footer>
+Data refreshes automatically while the market is open ·
+<a href="https://github.com/HarshitK2814/quantitative-trading-research">Full repository</a>
+· <a href="./live.json">raw feed</a><br>
+Paper trading only. Nothing here is investment advice, a performance claim, or
+an offer of any kind.
+</footer>
+
+</div>
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const usd = n => "$" + n.toLocaleString("en-US",
+  {minimumFractionDigits:2, maximumFractionDigits:2});
+const pct = n => (n>=0?"+":"") + (n*100).toFixed(2) + "%";
+const signCls = n => n > 0 ? "pos" : (n < 0 ? "neg" : "");
+
+let DATA = null, RANGE = "1D";
+
+function relTime(iso){
+  const s = Math.max(0, (Date.now() - new Date(iso).getTime())/1000);
+  if (s < 90) return Math.round(s) + "s ago";
+  if (s < 5400) return Math.round(s/60) + " min ago";
+  if (s < 172800) return Math.round(s/3600) + " h ago";
+  return Math.round(s/86400) + " d ago";
+}
+
+function drawChart(){
+  const svg = $("chart"), tip = $("tip");
+  const box = DATA && DATA.history && DATA.history[RANGE];
+  const pts = (box && box.points) || [];
+  svg.innerHTML = "";
+  if (pts.length < 2){
+    svg.innerHTML = '<text x="14" y="30" font-size="13" fill="#8a94a6">' +
+      'Not enough data in this range yet.</text>';
+    return;
+  }
+  const W = svg.clientWidth || 900, H = 280, P = 26;
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+
+  const eq = pts.map(p => p.e);
+  const lo = Math.min(...eq), hi = Math.max(...eq), span = (hi - lo) || 1;
+  // Compare against the range's own opening value, so colour reflects the
+  // change over the displayed window rather than an arbitrary baseline.
+  const base = eq[0];
+  const up = eq[eq.length-1] >= base;
+  const col = up ? "var(--pos)" : "var(--neg)";
+
+  const X = i => P + (W - 2*P) * (i / (pts.length - 1));
+  const Y = v => H - P - (H - 2*P) * ((v - lo) / span);
+
+  const line = pts.map((p,i) => `${X(i).toFixed(1)},${Y(p.e).toFixed(1)}`).join(" ");
+  const gid = "grad" + (up ? "U" : "D");
+  svg.insertAdjacentHTML("beforeend", `
+    <defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="${col}" stop-opacity=".22"/>
+      <stop offset="100%" stop-color="${col}" stop-opacity="0"/>
+    </linearGradient></defs>
+    <polygon points="${P},${H-P} ${line} ${W-P},${H-P}" fill="url(#${gid})"/>
+    <line x1="${P}" y1="${Y(base).toFixed(1)}" x2="${W-P}" y2="${Y(base).toFixed(1)}"
+      stroke="var(--muted)" stroke-width="1" stroke-dasharray="4 4" opacity=".5"/>
+    <polyline points="${line}" fill="none" stroke="${col}" stroke-width="2.2"
+      stroke-linejoin="round" stroke-linecap="round"/>
+    <circle id="cur" r="4" fill="${col}" opacity="0"/>
+    <line id="cvl" y1="${P}" y2="${H-P}" stroke="var(--muted)"
+      stroke-width="1" opacity="0"/>
+    <rect id="hit" x="0" y="0" width="${W}" height="${H}" fill="transparent"/>
+  `);
+
+  const hit = svg.querySelector("#hit"), cur = svg.querySelector("#cur"),
+        cvl = svg.querySelector("#cvl");
+  const move = ev => {
+    const r = svg.getBoundingClientRect();
+    const cx = ((ev.touches ? ev.touches[0].clientX : ev.clientX) - r.left)
+               * (W / r.width);
+    let i = Math.round((cx - P) / ((W - 2*P) / (pts.length - 1)));
+    i = Math.max(0, Math.min(pts.length - 1, i));
+    const p = pts[i], x = X(i), y = Y(p.e);
+    cur.setAttribute("cx", x); cur.setAttribute("cy", y);
+    cur.setAttribute("opacity", "1");
+    cvl.setAttribute("x1", x); cvl.setAttribute("x2", x);
+    cvl.setAttribute("opacity", ".35");
+    const d = new Date(p.t * 1000);
+    const when = RANGE === "1D" || RANGE === "1W"
+      ? d.toLocaleString([], {month:"short", day:"numeric",
+                              hour:"2-digit", minute:"2-digit"})
+      : d.toLocaleDateString([], {year:"numeric", month:"short", day:"numeric"});
+    const chg = p.e - base;
+    tip.innerHTML = `<strong>${usd(p.e)}</strong> ` +
+      `<span class="${signCls(chg)}">${chg>=0?"+":""}${chg.toFixed(2)}</span>` +
+      `<br><span class="muted">${when}</span>`;
+    tip.style.opacity = "1";
+    const px = x * (r.width / W);
+    tip.style.left = Math.min(Math.max(0, px - 60), r.width - 150) + "px";
+    tip.style.top = Math.max(0, y * (r.height / H) - 52) + "px";
+  };
+  const leave = () => {
+    tip.style.opacity = "0";
+    cur.setAttribute("opacity", "0");
+    cvl.setAttribute("opacity", "0");
+  };
+  hit.addEventListener("mousemove", move);
+  hit.addEventListener("mouseleave", leave);
+  hit.addEventListener("touchmove", move, {passive:true});
+  hit.addEventListener("touchend", leave);
+}
+
+function render(){
+  const a = DATA.account, m = DATA.market;
+  $("equity").textContent = usd(a.equity);
+  $("delta").innerHTML =
+    `<span class="${signCls(a.day_change)}">${a.day_change>=0?"+":""}` +
+    `${a.day_change.toFixed(2)} (${pct(a.day_change_pct)})</span>` +
+    ` <span class="muted" style="font-weight:500">today</span>`;
+  $("totret").innerHTML =
+    `<span class="${signCls(a.total_change)}">${pct(a.total_change_pct)}</span>`;
+  $("dayret").innerHTML =
+    `<span class="${signCls(a.day_change)}">${pct(a.day_change_pct)}</span>`;
+  $("cash").textContent = usd(a.cash);
+  $("npos").textContent = DATA.positions.length;
+  $("startcap").textContent = usd(a.starting_capital);
+  $("strategy").textContent = DATA.strategy;
+  $("updated").textContent = relTime(DATA.generated_at);
+  $("mkt").innerHTML = m.is_open
+    ? '<span class="dot live"></span>Market open'
+    : '<span class="dot closed"></span>Market closed';
+
+  const pos = DATA.positions.slice().sort((x,y) => y.market_value - x.market_value);
+  $("positions").innerHTML = pos.length ? pos.map(p => `
+    <tr><td><strong>${p.symbol}</strong>${
+      p.asset_class === "us_option" ? '<span class="tag">option</span>' : ""}</td>
+    <td class="num">${p.qty}</td>
+    <td class="num">${usd(p.avg_entry_price)}</td>
+    <td class="num">${usd(p.current_price)}</td>
+    <td class="num">${usd(p.market_value)}</td>
+    <td class="num ${signCls(p.unrealized_pl)}">${p.unrealized_pl>=0?"+":""}${
+      p.unrealized_pl.toFixed(2)} (${pct(p.unrealized_plpc)})</td></tr>`).join("")
+    : '<tr><td colspan="6" class="muted">No open positions.</td></tr>';
+
+  const ords = DATA.orders.slice(0, 12);
+  $("orders").innerHTML = ords.length ? ords.map(o => `
+    <tr><td>${o.submitted_at ? new Date(o.submitted_at)
+        .toLocaleString([], {month:"short", day:"numeric",
+                            hour:"2-digit", minute:"2-digit"}) : "—"}</td>
+    <td><strong>${o.symbol}</strong></td>
+    <td class="${o.side === "buy" ? "pos" : "neg"}">${o.side}</td>
+    <td class="num">${o.qty}</td>
+    <td class="num">${o.filled_avg_price ? usd(o.filled_avg_price) : "—"}</td>
+    <td class="muted">${o.status}</td></tr>`).join("")
+    : '<tr><td colspan="6" class="muted">No orders yet.</td></tr>';
+
+  drawChart();
+}
+
+async function load(){
+  try{
+    const r = await fetch("./live.json?t=" + Date.now(), {cache:"no-store"});
+    if(!r.ok) throw new Error("HTTP " + r.status);
+    DATA = await r.json();
+    render();
+  }catch(e){
+    $("equity").textContent = "—";
+    $("delta").innerHTML = '<span class="muted">Live feed unavailable — the ' +
+      'committed CSV journals linked below remain the source of record.</span>';
+  }
+}
+
+document.querySelectorAll(".ranges button").forEach(b => {
+  b.addEventListener("click", () => {
+    RANGE = b.dataset.r;
+    document.querySelectorAll(".ranges button").forEach(x =>
+      x.setAttribute("aria-pressed", String(x === b)));
+    drawChart();
+  });
+});
+window.addEventListener("resize", () => { if (DATA) drawChart(); });
+setInterval(load, 60000);                                   // poll the feed
+setInterval(() => { if (DATA) $("updated").textContent =
+  relTime(DATA.generated_at); }, 15000);                    // keep "ago" honest
+load();
+</script>
+</body></html>
