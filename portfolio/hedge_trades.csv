@@ -1,0 +1,4 @@
+timestamp_utc,trade_date,action,contract_symbol,underlying_symbol,option_type,strike_price,expiration_date,qty,side,position_intent,reference_mid_price,filled_avg_price,notional_covered,gross_equity_exposure,estimated_cost,underlying_price_at_trade,order_id,status,dry_run,note
+2026-09-10T17:41:45.213501+00:00,2026-09-10,plan,SPY261002P00720000,SPY,put,720.0,2026-10-02,1,buy,buy_to_open,2.735,,72000.0,88087.68,273.5,758.145,,DRY_RUN,True,
+2026-09-10T17:42:15.029040+00:00,2026-09-10,open,SPY261002P00720000,SPY,put,720.0,2026-10-02,1,buy,buy_to_open,2.7,,72000.0,88082.71,270.0,758.235,bc0896d8-27f7-4256-a120-9aa051f57512,pending_new,False,
+2026-09-10T17:43:36.000887+00:00,2026-09-10,open,SPY261002P00720000,SPY,put,720.0,2026-10-02,1,buy,buy_to_open,2.7,2.71,72000.0,88082.71,270.0,758.235,bc0896d8-27f7-4256-a120-9aa051f57512,filled,False,nan [fill update]
