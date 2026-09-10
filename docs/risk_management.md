@@ -73,3 +73,41 @@ never reach a t-statistic of 2.0 over ten years and top out around Sharpe 0.7
 for a 60/40 blend — so a live Sharpe below 1, or even negative over a short
 window, is consistent with everything already measured, not a sign that
 something is broken.
+
+## A third layer: H9's options hedge overlay (added 2026-09-10)
+
+Layers 1 and 2 above (portfolio circuit breakers, position stops) both
+constrain *target weights* — a blunt lever: reduce exposure in fixed steps
+once a threshold is crossed. H9 (`research/hypotheses.md`) adds a third,
+different kind of tool: a **priced** floor.
+
+**Mechanism.** A SPY protective put, struck near 5% out-of-the-money,
+21–35 days to expiry (rolled inside 14 DTE), sized to the book's gross
+*equity-sleeve* exposure and rounded down to whole contracts. `src/hedge.py`
+fixes this rule before any hedge is placed; `scripts/run_hedge.py` executes
+it, journals every event append-only to `portfolio/hedge_trades.csv`, and
+polls back the real fill price the same way the equity journal does (see
+finding #24 — this was built with that fix from the start, not added after
+finding the same bug twice).
+
+**What it's for.** A precise, purchased floor rather than a step-function
+exposure cut — the tradeoff is a known, ongoing premium cost in exchange for
+a bounded worst case on the hedged notional, instead of a reactive halving
+after a threshold is already breached.
+
+**The limitation that matters most, restated from H9's pre-registration
+because it cannot be said only once:** there is no free historical
+options-chain data back to 2007, so **this hypothesis has no backtest behind
+it at all.** Every other strategy in this project was tested before being
+trusted; H9 is trusted from day one on pre-registered *reasoning* alone. Its
+live track record is the only evidence that will ever exist for it. A period
+with no large drawdown will show the hedge as pure cost with no offsetting
+benefit — that is not evidence the hedge doesn't work, only that the sample
+didn't test it, and any report of H9's results must say so rather than let a
+flat P&L read as a verdict.
+
+**First real position, for the record (not cherry-picked — it's the first
+and only one so far):** opened 2026-09-10, `SPY261002P00720000` (5.0% OTM,
+22 DTE at open), 1 contract, filled at $2.71/share ($271 total premium),
+covering $72,000 of $88,083 equity-sleeve exposure (81.7% — the residual is
+the rounding-to-whole-contracts cost, not hidden).

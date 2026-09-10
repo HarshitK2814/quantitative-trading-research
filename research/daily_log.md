@@ -493,11 +493,64 @@ deployment and deployed anyway as a forward test.
     pre-registration, so each can get its own proper build-and-verify pass
     instead of three new asset classes landing half-tested at once.
 
+28. **H9 (options hedge) built and deployed live, 2026-09-10, at the user's
+    request ("yes just i want everything for free").** Deviated from the
+    stated implementation order (universe, then crypto, then options) because
+    the user specifically asked for the hedge next; logged here so the
+    reordering is visible rather than silently done.
+
+    Before writing any code, the real Alpaca options API was probed live
+    rather than guessed from docs: contract listing
+    (`GET /v2/options/contracts`), quote format (`GET .../options/quotes/latest`,
+    `bp`/`ap` fields), and the order schema -- options orders require a
+    `position_intent` field equity orders don't have. Confirmed by
+    submitting one real limit order and immediately cancelling it (`204`),
+    rather than trusting the schema without evidence.
+
+    Built: `src/broker.py` (`OptionContract`, `OptionQuote`,
+    `get_option_contracts`, `get_option_quotes`, `submit_option_order`,
+    `get_option_positions`, plus `options_approved_level`/
+    `options_buying_power` on `AccountSnapshot`), `src/hedge.py` (the fixed
+    selection/sizing rule from H9's pre-registration, plus an append-only
+    journal), `scripts/run_hedge.py`. 23 new tests, all offline against
+    synthetic contracts/quotes.
+
+    **Caught building this, not after:** the first version of the hedge
+    journal recorded only the *estimated* premium at submission time, with
+    no mechanism to poll back the real fill -- the exact class of gap that
+    caused finding #24's duplication bug in the equity journal, just a
+    different failure mode (silent understatement of cost instead of
+    duplication). Added `update_hedge_fills`, built with #24's fix
+    (judge "pending" from each order's most recent row) from the start
+    rather than discovering the same bug shape twice. A second smaller bug
+    surfaced immediately on the first real fill: an empty CSV field reads
+    back as `NaN`, and `NaN or ""` keeps the `NaN` (`NaN` is truthy in
+    Python) -- produced a literal `"nan [fill update]"` note. Fixed with an
+    explicit `pd.isna` check; regression test added
+    (`test_fill_update_note_is_clean_not_literal_nan`).
+
+    **First real hedge position** (not cherry-picked -- the first and only
+    one so far): opened 2026-09-10, `SPY261002P00720000`, 5.0% OTM, 22 DTE
+    at open, 1 contract, filled $2.71/share ($271 premium), covering $72,000
+    of $88,083 equity-sleeve exposure (81.7%; the gap is whole-contract
+    rounding, not hidden). Full detail in `docs/risk_management.md`.
+
+    Wired into the nightly automation (`scripts/run_live_scheduled.ps1`):
+    runs after the equity leg, its own failure is deliberately non-fatal to
+    the pipeline (it's a no-op most nights -- rolls only inside 14 DTE) so a
+    hedge-leg problem never blocks committing/pushing the primary equity
+    journal. `portfolio/hedge_trades.csv` added to the nightly commit.
+    Verified end-to-end with a real trigger: both legs ran, committed, and
+    pushed (`8c64e99`).
+
+    203 tests pass, ruff clean.
+
 **Next**
 
 - Daily: automatic via Windows Task Scheduler (`PaperTradingDailyRun`,
-  21:30 IST) -- trades, journals, commits, and pushes with no manual step.
-  Check `logs/live_run.log` occasionally, not daily.
+  21:30 IST) -- equity rebalance, H9 hedge check, journals, commits, and
+  pushes with no manual step. Check `logs/live_run.log` occasionally, not
+  daily.
 - Research continues: H2 time-series trend; H6's own backtest before any
-  live short exposure is considered; H7-H9 implementation (universe
-  extension first -- lowest complexity -- then crypto, then options).
+  live short exposure is considered; H7 (extended universe) and H8 (crypto)
+  implementation, in that order.

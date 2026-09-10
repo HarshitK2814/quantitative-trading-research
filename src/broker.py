@@ -10,8 +10,10 @@ Design notes
 A thin REST wrapper is used rather than ``alpaca-py``. The reasons are specific
 rather than dogmatic:
 
-* The project needs exactly five operations (clock, account, positions, submit,
-  list orders). A dependency is not warranted for that.
+* The project needs exactly a handful of operations (clock, account,
+  positions, submit, list orders, and -- for H9's options hedge -- option
+  contract lookup, option quotes, and option order submission). A dependency
+  is not warranted for that.
 * Every request goes through :meth:`AlpacaPaperBroker._request`, which is a
   single auditable place to enforce the paper endpoint at call time -- not just
   at construction time.
@@ -19,6 +21,15 @@ rather than dogmatic:
 
 ``alpaca-py`` remains the right choice for anything needing streaming, complex
 order types, or the full asset universe.
+
+Options support
+----------------
+The option methods below were verified against the real paper API before
+being written -- contract listing, quote format, and order schema (including
+``position_intent``, which options orders require and equity orders do not)
+were each probed live and a real (immediately cancelled) test order was
+submitted to confirm the schema, rather than being guessed from
+documentation. See ``research/daily_log.md`` for that verification.
 """
 
 from __future__ import annotations
@@ -69,6 +80,37 @@ class AccountSnapshot:
     status: str
     trading_blocked: bool
     taken_at: datetime
+    #: Options trading level Alpaca has approved for this paper account
+    #: (0 = not approved). Defaulted so existing callers/tests that build an
+    #: AccountSnapshot without options fields keep working unchanged.
+    options_approved_level: int = 0
+    options_buying_power: float = 0.0
+
+
+@dataclass(frozen=True)
+class OptionContract:
+    """One listed option contract, as returned by the contracts endpoint."""
+
+    symbol: str  # OCC symbol, e.g. "SPY261002P00725000"
+    underlying_symbol: str
+    option_type: str  # "put" or "call"
+    strike_price: float
+    expiration_date: date
+    tradable: bool
+
+
+@dataclass(frozen=True)
+class OptionQuote:
+    """Latest bid/ask for one option contract."""
+
+    symbol: str
+    bid: float
+    ask: float
+
+    @property
+    def mid(self) -> float:
+        """Midpoint of bid and ask -- the estimate used for cost planning."""
+        return (self.bid + self.ask) / 2.0
 
 
 @dataclass(frozen=True)
@@ -167,6 +209,8 @@ class AlpacaPaperBroker:
             status=payload["status"],
             trading_blocked=bool(payload["trading_blocked"]),
             taken_at=datetime.now().astimezone(),
+            options_approved_level=int(payload.get("options_approved_level") or 0),
+            options_buying_power=float(payload.get("options_buying_power") or 0.0),
         )
 
     def get_positions(self) -> dict[str, Position]:
@@ -293,3 +337,190 @@ class AlpacaPaperBroker:
     def cancel_all_orders(self) -> None:
         """Cancel every open order. Used to clear stale state before a run."""
         self._request("DELETE", "/v2/orders")
+
+    # -- options (H9) --------------------------------------------------------
+
+    def get_option_contracts(
+        self,
+        underlying_symbol: str,
+        option_type: Literal["put", "call"],
+        expiration_gte: date,
+        expiration_lte: date,
+        strike_gte: float | None = None,
+        strike_lte: float | None = None,
+        limit: int = 100,
+    ) -> list[OptionContract]:
+        """List active, tradable option contracts matching the given filters.
+
+        Args:
+            underlying_symbol: e.g. ``"SPY"``.
+            option_type: ``"put"`` or ``"call"``.
+            expiration_gte: Earliest acceptable expiration date, inclusive.
+            expiration_lte: Latest acceptable expiration date, inclusive.
+            strike_gte: Optional minimum strike.
+            strike_lte: Optional maximum strike.
+            limit: Maximum contracts to return.
+
+        Returns:
+            Matching contracts with ``tradable=False`` rows already excluded.
+
+        """
+        params: dict[str, Any] = {
+            "underlying_symbols": underlying_symbol,
+            "status": "active",
+            "type": option_type,
+            "expiration_date_gte": expiration_gte.isoformat(),
+            "expiration_date_lte": expiration_lte.isoformat(),
+            "limit": limit,
+        }
+        if strike_gte is not None:
+            params["strike_price_gte"] = str(strike_gte)
+        if strike_lte is not None:
+            params["strike_price_lte"] = str(strike_lte)
+
+        payload = self._request("GET", "/v2/options/contracts", params=params) or {}
+        contracts = []
+        for row in payload.get("option_contracts", []):
+            if not row.get("tradable"):
+                continue
+            contracts.append(
+                OptionContract(
+                    symbol=row["symbol"],
+                    underlying_symbol=row["underlying_symbol"],
+                    option_type=row["type"],
+                    strike_price=float(row["strike_price"]),
+                    expiration_date=date.fromisoformat(row["expiration_date"]),
+                    tradable=bool(row["tradable"]),
+                )
+            )
+        return contracts
+
+    def get_option_quotes(self, symbols: list[str]) -> dict[str, OptionQuote]:
+        """Fetch the latest bid/ask for one or more option contracts.
+
+        Note:
+            Uses the options market-data host and a different response shape
+            (``bp``/``ap`` for bid/ask price) from :meth:`get_last_prices`'s
+            equity trades endpoint -- they are genuinely different APIs, not
+            a naming inconsistency.
+
+        """
+        if not symbols:
+            return {}
+        response = self._session.get(
+            "https://data.alpaca.markets/v1beta1/options/quotes/latest",
+            params={"symbols": ",".join(symbols)},
+            timeout=_TIMEOUT,
+        )
+        response.raise_for_status()
+        quotes = response.json().get("quotes", {})
+        return {
+            sym: OptionQuote(symbol=sym, bid=float(row["bp"]), ask=float(row["ap"]))
+            for sym, row in quotes.items()
+            if "bp" in row and "ap" in row
+        }
+
+    def get_option_positions(self) -> dict[str, Position]:
+        """Fetch open option positions, keyed by OCC symbol.
+
+        Note:
+            Reuses the equity :class:`Position` shape -- Alpaca returns
+            option positions through the same ``/v2/positions`` endpoint with
+            the same fields, ``qty`` denominated in contracts rather than
+            shares. Filtered to ``asset_class == "us_option"`` so equity
+            positions in the same response aren't picked up here.
+
+        """
+        payload = self._request("GET", "/v2/positions") or []
+        return {
+            row["symbol"]: Position(
+                symbol=row["symbol"],
+                qty=float(row["qty"]),
+                market_value=float(row["market_value"]),
+                avg_entry_price=float(row["avg_entry_price"]),
+                current_price=float(row["current_price"]),
+                unrealised_pl=float(row["unrealized_pl"]),
+            )
+            for row in payload
+            if row.get("asset_class") == "us_option"
+        }
+
+    def submit_option_order(
+        self,
+        symbol: str,
+        qty: int,
+        side: OrderSide,
+        position_intent: Literal[
+            "buy_to_open", "buy_to_close", "sell_to_open", "sell_to_close"
+        ],
+        order_type: str = "limit",
+        limit_price: float | None = None,
+        time_in_force: TimeInForce = "day",
+        client_order_id: str | None = None,
+    ) -> OrderResult:
+        """Submit one options order to the paper account.
+
+        Note:
+            Option prices are quoted **per share**; the actual dollar cost of
+            one contract is ``price * 100`` (the standard multiplier), not
+            ``price``. Callers must apply that multiplier themselves when
+            sizing or logging cost -- this method does not, so it stays a
+            faithful mirror of what the API actually charges per unit.
+
+        Args:
+            symbol: OCC option symbol.
+            qty: Number of contracts. Must be positive.
+            side: ``"buy"`` or ``"sell"``.
+            position_intent: Required by Alpaca for options (unlike equities)
+                to disambiguate opening from closing a position.
+            order_type: ``"market"`` or ``"limit"``.
+            limit_price: Required for limit orders (per share, not per
+                contract).
+            time_in_force: As for equity orders.
+            client_order_id: Idempotency key.
+
+        Returns:
+            The submitted order's state.
+
+        """
+        if qty <= 0:
+            raise ValueError(f"qty must be positive (got {qty}).")
+        if order_type == "limit" and limit_price is None:
+            raise ValueError("limit orders require limit_price.")
+
+        body: dict[str, Any] = {
+            "symbol": symbol,
+            "qty": str(qty),
+            "side": side,
+            "type": order_type,
+            "time_in_force": time_in_force,
+            "position_intent": position_intent,
+        }
+        if client_order_id:
+            body["client_order_id"] = client_order_id
+        if limit_price is not None:
+            body["limit_price"] = str(round(limit_price, 2))
+
+        logger.info(
+            "Submitting PAPER option order: %s %s %s (%s)",
+            side, qty, symbol, position_intent,
+        )
+        payload = self._request("POST", "/v2/orders", json=body)
+
+        return OrderResult(
+            order_id=payload["id"],
+            client_order_id=payload["client_order_id"],
+            symbol=payload["symbol"],
+            side=payload["side"],
+            qty=float(payload["qty"]),
+            order_type=payload["type"],
+            time_in_force=payload["time_in_force"],
+            status=payload["status"],
+            submitted_at=payload["submitted_at"],
+            filled_qty=float(payload.get("filled_qty") or 0.0),
+            filled_avg_price=(
+                float(payload["filled_avg_price"])
+                if payload.get("filled_avg_price")
+                else None
+            ),
+        )

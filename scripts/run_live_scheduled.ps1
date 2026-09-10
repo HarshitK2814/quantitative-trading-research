@@ -27,10 +27,21 @@ Add-Content -Path $logFile -Value "`n===== SCHEDULED RUN START $stamp ====="
 cmd.exe /c "`"$python`" scripts\run_live.py --execute >> `"$logFile`" 2>&1"
 
 if ($LASTEXITCODE -ne 0) {
-    Add-Content -Path $logFile -Value "===== SCHEDULED RUN FAILED (exit $LASTEXITCODE) -- skipping commit/push ====="
+    Add-Content -Path $logFile -Value "===== EQUITY RUN FAILED (exit $LASTEXITCODE) -- skipping commit/push ====="
     exit $LASTEXITCODE
 }
-Add-Content -Path $logFile -Value "===== SCHEDULED RUN OK ====="
+Add-Content -Path $logFile -Value "===== EQUITY RUN OK ====="
+
+# H9's hedge check runs second and its failure is deliberately non-fatal to
+# the pipeline -- it is a no-op most nights (rolls only inside 14 DTE), and a
+# hedge-leg failure must not block committing/pushing the equity journal,
+# which is the primary evidence trail.
+cmd.exe /c "`"$python`" scripts\run_hedge.py --execute >> `"$logFile`" 2>&1"
+if ($LASTEXITCODE -eq 0) {
+    Add-Content -Path $logFile -Value "===== HEDGE RUN OK ====="
+} else {
+    Add-Content -Path $logFile -Value "===== HEDGE RUN FAILED (exit $LASTEXITCODE) -- continuing to commit/push the equity leg regardless ====="
+}
 
 # ---------------------------------------------------------------------------
 # Auto-commit + push -- the journal CSVs only.
@@ -38,11 +49,11 @@ Add-Content -Path $logFile -Value "===== SCHEDULED RUN OK ====="
 # Deliberately NOT `git add -A`. This runs unattended for months; sweeping in
 # whatever else happens to be sitting in the working tree (a half-finished
 # manual edit made earlier that day, a fresh dated cache manifest under
-# data/raw/) is not a decision an unattended job should make. Only the two
+# data/raw/) is not a decision an unattended job should make. Only the
 # append-only evidence files this project already treats as the record are
 # staged.
 # ---------------------------------------------------------------------------
-cmd.exe /c "git add portfolio/trades.csv portfolio/daily_snapshot.csv >> `"$logFile`" 2>&1"
+cmd.exe /c "git add portfolio/trades.csv portfolio/daily_snapshot.csv portfolio/hedge_trades.csv >> `"$logFile`" 2>&1"
 
 $staged = git diff --cached --name-only
 if (-not $staged) {
@@ -56,7 +67,7 @@ auto: daily paper-trading journal update $dateOnly
 
 Automated nightly commit via scripts/run_live_scheduled.ps1 (Windows
 Task Scheduler, task PaperTradingDailyRun). No code changes -- journal
-CSVs only.
+CSVs only (equity trades/snapshots + H9 hedge journal).
 "@ | Set-Content -Path $commitMsgFile -Encoding ascii
 
 cmd.exe /c "git commit -F `"$commitMsgFile`" >> `"$logFile`" 2>&1"
