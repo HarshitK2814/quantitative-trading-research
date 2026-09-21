@@ -2,3 +2,4 @@ timestamp_utc,trade_date,action,contract_symbol,underlying_symbol,option_type,st
 2026-09-10T17:41:45.213501+00:00,2026-09-10,plan,SPY261002P00720000,SPY,put,720.0,2026-10-02,1,buy,buy_to_open,2.735,,72000.0,88087.68,273.5,758.145,,DRY_RUN,True,
 2026-09-10T17:42:15.029040+00:00,2026-09-10,open,SPY261002P00720000,SPY,put,720.0,2026-10-02,1,buy,buy_to_open,2.7,,72000.0,88082.71,270.0,758.235,bc0896d8-27f7-4256-a120-9aa051f57512,pending_new,False,
 2026-09-10T17:43:36.000887+00:00,2026-09-10,open,SPY261002P00720000,SPY,put,720.0,2026-10-02,1,buy,buy_to_open,2.7,2.71,72000.0,88082.71,270.0,758.235,bc0896d8-27f7-4256-a120-9aa051f57512,filled,False,nan [fill update]
+2026-09-21T16:31:49.818286+00:00,2026-09-21,roll_close,SPY261002P00720000,SPY,put,,2026-10-02,1,sell,sell_to_close,,,,88577.11,,772.22,65778414-60d8-4ef1-bcd0-2ae2126e9759,pending_new,False,closed to roll into a new contract
