@@ -22,7 +22,7 @@ import numpy as np
 import pandas as pd
 
 from src.backtest import buy_and_hold, run_backtest
-from src.config import COSTS, SPLITS, UNIVERSE
+from src.config import SPLITS, UNIVERSE
 from src.data import align_risk_free, load_prices, load_risk_free_rate
 from src.metrics import sharpe_ratio
 from src.signals import (
