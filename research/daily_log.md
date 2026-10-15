@@ -810,31 +810,36 @@ evaluated across H1/H4/H7 (H2/H3/H6 counted separately in overfitting.md).
 
 **Decision (dated, not a reaction to P&L):** live book unchanged. No new sleeve.
 
-## 2026-10-15 — Measured slippage from our own fills (Task 1)
+## 2026-10-15 — Measured slippage from our own fills
 
 Added a read-only ledger reader (`src/ledger.py`) and a report script
 (`scripts/analyze_slippage.py` -> `research/slippage_study.md`). Input is
-`portfolio/trades.csv`, deduplicated to one row per filled `order_id`
-(114 orders). Re-logged duplicate fill rows (11 orders, 49 rows, identical
-values) were removed.
+`portfolio/trades.csv`: 152 raw filled rows with a slippage figure,
+deduplicated to one row per `order_id` (114 orders). The duplicates are
+repeated re-logs from the 2026-09-09 re-runs.
 
 Sign: positive = worse for us. Definition is implementation shortfall against
 the reference price at order generation (includes drift until fill), not pure
 spread.
 
 Measured (bps, n = 114):
-- Mean -1.70, median 0.51, 5%-winsorised mean -0.46.
-- p90 of |slippage| 52.1; std 33.3; range -149.8 to +134.0.
-- Share of fills worse than 10 bps: 8.8% overall; 4.8% for notional <5k
-  (n = 83); 20% for 5k-20k (n = 30); 1 fill above 20k.
+- Mean -1.70 (negative), standard error about 3.12 (std 33.3 / sqrt(114)), so
+  the mean is statistically indistinguishable from zero. Median 0.51,
+  5%-winsorised mean -0.46.
+- p90 of |slippage| 52.1; range -149.8 to +134.0.
+- Fills worse than 10 bps: 10 of 114 (8.8%) overall; 4.8% for notional <5k
+  (n = 83).
+- The only bucket with a mean above 10 bps is notional 5k-20k (n = 30, mean
+  10.20 bps). Its "share over 10 bps" of 20% is a count of 6 fills out of 30.
+  The >20k bucket has a single fill.
 
-Read against the 10 bps backtest assumption: the central tendency sits well
-inside 10 bps, so the assumption is not contradicted at the median. The tails
-are not covered: about 1 fill in 11 cost more than 10 bps, and the 5k-20k
-bucket is worse. The assumption is not clearly conservative for large or tail
-fills.
+Read against the 10 bps backtest assumption: that assumption is a mean-cost
+assumption. The tail share (fills above 10 bps) is a separate check, not
+equivalent to it. The overall mean is below 10 bps, but with this sample size
+and a std of 33 bps the data cannot tightly pin the mean cost.
 
 Caveats: paper fills are simulated and likely optimistic. ETF liquidity here
-is extreme. The sample covers only a few weeks (2026-09-09 to 2026-10-14). The
-heavy tails appear to come mostly from reference-price staleness, not market
-impact. This is evidence about the cost assumption, not proof of it.
+is extreme. The sample covers only a few weeks (2026-09-09 to 2026-10-14).
+Heavy tails may reflect price drift between order generation and fill; this
+analysis does not separate drift from market impact (hypothesis, not tested
+here). This is evidence about the cost assumption, not proof of it.

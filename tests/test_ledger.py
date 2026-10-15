@@ -45,6 +45,15 @@ def test_load_fills_keeps_only_filled_nondry_with_slippage(tmp_path) -> None:
     assert fills["slippage_bps"].iloc[0] == pytest.approx(2.0)
 
 
+def test_load_fills_excludes_filled_dry_run_with_slippage(tmp_path) -> None:
+    path = _write(tmp_path, [
+        _row("a", "filled", 2.0),
+        _row("dry", "filled", 5.0, dry=True),
+        _row("dry2", "filled", 5.0, dry="True"),
+    ])
+    assert list(load_fills(path)["order_id"]) == ["a"]
+
+
 def test_load_fills_dedupes_by_order_id_keeping_last(tmp_path) -> None:
     path = _write(tmp_path, [_row("a", "filled", 1.0), _row("a", "filled", 3.0)])
     fills = load_fills(path)
@@ -68,3 +77,19 @@ def test_slippage_summary_statistics(tmp_path) -> None:
 def test_slippage_summary_empty_is_safe(tmp_path) -> None:
     fills = load_fills(_write(tmp_path, [_row("a", "pending_new", "")]))
     assert slippage_summary(fills).loc["all", "n"] == 0
+
+
+def test_bucket_edges_and_bucket_side_rows(tmp_path) -> None:
+    rows = [
+        _row("a", "filled", 1.0, side="buy", notional=5_000.0),
+        _row("b", "filled", 2.0, side="sell", notional=5_000.01),
+        _row("c", "filled", 3.0, side="buy", notional=20_000.0),
+        _row("d", "filled", 4.0, side="sell", notional=20_000.01),
+    ]
+    table = slippage_summary(load_fills(_write(tmp_path, rows)))
+    expected = {"notional <5k", "notional 5k-20k", "notional >20k", "buy", "sell"}
+    assert expected <= set(table.index)
+    assert table.loc["notional <5k", "n"] == 1      # exactly 5_000 is "<5k"
+    assert table.loc["notional 5k-20k", "n"] == 2   # 20_000 is in "5k-20k"
+    assert table.loc["notional >20k", "n"] == 1
+    assert table.loc["notional <5k", "mean_bps"] == pytest.approx(1.0)

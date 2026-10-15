@@ -17,6 +17,8 @@ import pandas as pd
 
 from src.execution import TRADES_PATH
 
+# pd.cut is right-inclusive: a notional of exactly 5_000 falls in "<5k" and
+# exactly 20_000 falls in "5k-20k".
 _NOTIONAL_BINS = [0.0, 5_000.0, 20_000.0, np.inf]
 _NOTIONAL_LABELS = ["<5k", "5k-20k", ">20k"]
 
@@ -33,6 +35,11 @@ def load_fills(path: Path = TRADES_PATH) -> pd.DataFrame:
 
 
 def _stats(values: pd.Series) -> dict[str, float]:
+    """Summary statistics for a series of slippage values in bps.
+
+    Returns n, mean, median, p90 of absolute value, sample std (ddof=1) and
+    the share of values strictly above 10 bps. Empty input gives n=0 and NaNs.
+    """
     if values.empty:
         return {"n": 0, "mean_bps": np.nan, "median_bps": np.nan,
                 "p90_abs_bps": np.nan, "std_bps": np.nan,
