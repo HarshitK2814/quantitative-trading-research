@@ -771,3 +771,41 @@ capital (see `src/sleeves.py`).
   skips cleanly (touching nothing) when there is no usable quote.
 - The missing 2026-10-14 snapshot is a known gap and is not backfilled; the
   journal is append-only.
+
+## 2026-10-15 — H4 and H7 run (train; H4 also validation). Both REJECTED. No live change.
+
+Scripts: `scripts/run_h4_h7.py`, `scripts/run_h4_validation.py`. Test period
+(2021-2025) **not touched**. Variant (d) equal-risk-contribution was not run.
+
+**H4, train (25 signal configs x 5 constructions = 125 trials).** Construction
+helped on train: vol-target 10% beat equal-weight in 25/25 configs (median
+Sharpe gain +0.081); inverse-vol 84-96% across 21/63/126-day windows, so the
+pre-registered falsification condition was *not* triggered. Consistent with the
+stated prior (smaller but more stable gain than signal tuning).
+
+**H4, validation (50 trials) -- the gain did not survive.** Primary spec
+(126/k5), 10 bps:
+
+| | Ann. return | Vol | Sharpe | Max DD |
+|---|---|---|---|---|
+| H1 equal-weight | 15.6% | 17.0% | 0.86 | -24.6% |
+| H1 + VT10 | 9.5% | 12.4% | 0.69 | -20.0% |
+
+VT10 beat EW in **0/25** validation configs (median Sharpe 0.587 vs 0.733).
+Vol-targeting cut drawdown but cost more return than it saved in risk in
+2017-20, the opposite of its train-period result. Train and validation disagree
+on sign, so it is **rejected**; it would also not have increased returns -- by
+construction it holds more cash, which lowers return in a rising market.
+(Train max-DD improved from -39.8% to -21.4%, which is the real, if modest,
+effect: risk reduction, not return.)
+
+**H7 (extended universe, train, 100 trials).** 52% of configs beat the
+equal-weight benchmark on the extended universe vs 46% on the original;
+pre-registered bar is 60%. **Rejected** (small diversification effect, as the
+stated prior said). Both universes' EW benchmark Sharpe is below 0.5, i.e. the
+universe itself, not the signal, caps what H1 can do.
+
+**Trial ledger:** 50 (H1 grid) + 125 + 100 + 50 = **at least 325 configurations**
+evaluated across H1/H4/H7 (H2/H3/H6 counted separately in overfitting.md).
+
+**Decision (dated, not a reaction to P&L):** live book unchanged. No new sleeve.
