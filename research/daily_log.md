@@ -863,3 +863,24 @@ best of 175, so it carries the heaviest selection. These are upper bounds:
 the ledger leaves out the H2/H3/H6/H7 trials, so the true N is larger and the
 true DSR lower. This is suggestive, not conclusive. The numbers do not
 change the live strategy.
+
+## 2026-10-15 - Round 2 pre-registered: H11-H15 (no results exist yet)
+
+Appended to `research/hypotheses.md` AMENDMENTS **before any code for them was
+written or run**; nothing above the new section was edited (0 removed lines).
+Built from `research/institutional_methods.md` (graded literature; evidence is
+mostly abstract/snippet level and says so), `research/slippage_study.md`
+(114 fills, mean -1.70 bps, std error about 3 bps) and
+`research/deflated_sharpe.md` (H1 DSR 0.78, best H4 train config 0.86, both
+under 0.95).
+
+- H11 cost-aware no-trade band (ledger-informed; prior ~30% supported)
+- H12 diagnostic: cash drag vs timing in the H4 validation failure (not freezable)
+- H13 regime-conditioned scaling (prior ~20%; may fail like H4)
+- H14 ERC/HRP construction ladder, H4 variant d (prior ~15%)
+- H15 absolute-momentum gate (prior ~25%; deliberate possible negative)
+
+113 new configurations declared; cumulative ledger at least 438. H10 (put vs
+trend) stays reserved and unregistered. Freeze rule: at most one candidate; if
+none is Supported the 2021-2025 test window stays untouched and that is the
+result. No change to live capital.

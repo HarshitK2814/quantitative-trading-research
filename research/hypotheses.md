@@ -427,3 +427,135 @@ cannot look like a rationalisation invented after seeing a loss.
 See `research/institutional_landscape.md` §6 for the full evidence and the
 proposed follow-up comparison (H10: put versus trend as drawdown mitigation).
 
+---
+
+## Round 2 pre-registration: H11-H15 (added 2026-10-15, before any run)
+
+**Provenance.** Written after the literature synthesis in
+`research/institutional_methods.md` and the ledger analyses in
+`research/slippage_study.md` and `research/deflated_sharpe.md`, and **before any
+H11-H15 code exists or has been run**. The commit that adds this section is the
+pre-registration timestamp. Everything above this section is untouched.
+
+**Numbering note.** **H10** (put versus trend as drawdown mitigation) was proposed
+in the H9 amendment and in `daily_log.md` but never pre-registered. The id stays
+reserved for it, so this round starts at H11. H10 remains unregistered and unrun.
+
+**Shared design (applies to H11-H15 unless an entry overrides it).**
+
+| Element | Specification |
+|---|---|
+| Universe | The original 16 ETFs, unchanged (`UNIVERSE`). No new tickers. |
+| Baseline | H1 primary: lookback 126, skip 21, top-5 equal-weight, monthly, long-only, 10 bps, as deployed live. "Beats baseline" always means versus this, on the same dates and costs. |
+| Samples | Train 2007-2016 and validation 2017-2020 only. **The 2021-2025 test window is not loaded by any H11-H15 code.** |
+| Costs | 10 bps headline; sweep 5/10/20 bps. Measured slippage (`research/slippage_study.md`: 114 fills, mean -1.70 bps, standard error about 3 bps, median 0.5, 8.8% of fills above 10 bps) is used only to justify the range, not to fit parameters. |
+| Verdict tiers | **Supported (research verdict):** the entry's decision rule holds in train *and* validation with the same sign. **Deployment-eligible:** Supported *and* a single frozen configuration achieves DSR >= 0.95 on the validation window against the cumulative trial ledger declared below, *and* then passes the one-touch test and a paper shadow period (spec section 3). Most results are expected to reach neither tier. |
+| Trial accounting | New configurations declared per entry: H11 15, H12 50, H13 12, H14 27, H15 9 = **113**. Cumulative ledger after this round: **at least 438** (325 from H1/H4/H7 plus 113; H2/H3/H6 counted separately). |
+| Freeze rule | At most **one** candidate is frozen for the one-touch test. If at least one candidate strategy hypothesis (H11, H13, H14, H15; H12 is a diagnostic and cannot be frozen) is Supported, freeze the Supported hypothesis whose primary configuration has the largest validation net-Sharpe improvement over baseline, with its configuration fixed *as pre-declared below*, not re-tuned. **If none is Supported, no candidate is frozen, the test window stays untouched, and that is the reported result.** |
+| Grid rule | Where a decision rule cites "the grid", it means the declared grid only; configurations may not be added after seeing results. The pre-declared primary configuration is the headline; best-of-grid values are reported only alongside the trial count. |
+
+---
+
+### H11 - Cost-aware no-trade band with partial adjustment on H1 (ledger-informed)
+
+**Context.** The execution ledger shows fill dispersion far wider than its mean (std about 33 bps, median 0.5 bps), so turnover has a tail cost not captured by a flat 10 bps. Theory and the evidence in `institutional_methods.md` §G say band-based partial adjustment can beat mechanical rebalancing when trading is costly, while §G4 warns it should not be expected to add alpha. This also tests whether H1's monthly top-5 churn is worth its cost.
+
+**Research question.** Does trading only when a position drifts more than a band from its H1 target, and then closing only part of the gap, raise net Sharpe by cutting turnover?
+
+- **H0:** Net Sharpe of the banded version is below baseline's, or turnover falls by less than 25%.
+- **H1 (alternative):** Net Sharpe is at least baseline's **and** turnover falls by at least 25%, in train and validation.
+
+| Element | Specification |
+|---|---|
+| Rule | At each monthly rebalance, compute H1 target weights w*. For each asset, if \|w* - w_current(drifted)\| > band b, move a fraction phi of the gap toward w*; otherwise do nothing. Weights sum to at most 1; long-only. |
+| Grid (15) | b in {0, 0.02, 0.04, 0.06, 0.10} x phi in {0.5, 0.75, 1.0}. (b=0, phi=1 is the baseline.) |
+| Primary | b = 0.04, phi = 1.0 |
+| Decision rule | Supported if, in **both** train and validation: primary net Sharpe >= baseline at 10 bps, **and** primary turnover <= 75% of baseline, **and** at least 60% of the 14 non-baseline grid configs have net Sharpe >= baseline at 10 bps. |
+| Stated prior | Turnover will fall, Sharpe change near zero (absolute difference below 0.05). About 30% chance of Supported. A flat result is the most likely honest outcome and is a finding. |
+| Falsification | Primary net Sharpe below baseline in either period, or fewer than 60% of grid configs at or above baseline. |
+
+---
+
+### H12 - Diagnostic: why vol-targeting failed validation (cash drag vs timing)
+
+**Context.** H4's 10% vol-target beat equal-weight in 25/25 train configs and 0/25 validation configs (`daily_log.md`, 2026-10-15). `institutional_methods.md` §C offers four inferred reasons; the first two are cash drag and scarcity of stress periods. This entry tests the cash-drag explanation. It is a **diagnostic**, not a candidate strategy, and cannot be frozen.
+
+**Research question.** Is the validation shortfall of vol-targeted H1 mostly explained by holding less equity (average exposure below 100%), as opposed to bad timing of exposure changes?
+
+- **H0:** Cash drag explains 50% or less of the validation return shortfall.
+- **H1 (alternative):** Cash drag explains more than 50%.
+
+| Element | Specification |
+|---|---|
+| Method | For each of the 25 H1 signal configs (lookback in {21,63,126,189,252} x k in {3,4,5,6,8}, skip 21), run H1 with the existing 10% / 63-day vol-target (`apply_volatility_target`, unchanged) and compute its mean gross exposure e over the period. Build a **constant-exposure baseline**: e x H1 equal-weight + (1-e) x risk-free, same costs. |
+| Outputs (per period, 25 configs) | timing value = Sharpe(VT10) - Sharpe(constant-exposure); cash-drag share = (ret(H1 EW) - ret(constant-exposure)) / (ret(H1 EW) - ret(VT10)), where the denominator is positive. |
+| Decision rule | The alternative is accepted if the **median** validation cash-drag share exceeds 0.5 across configs with a positive denominator. Also reported: median timing value in train vs validation. |
+| Trials | 25 configs x 2 periods = 50 evaluations. |
+| Stated prior | Cash drag is the majority explanation (about 70% confidence), with timing value positive in train (2008) and near zero in validation. |
+| Falsification | Median validation cash-drag share <= 0.5, meaning timing, not exposure level, drove the loss. No deployment follows from this entry either way. |
+
+---
+
+### H13 - Regime-conditioned scaling (stress states only)
+
+**Context.** Unconditional vol-targeting failed validation. Daniel and Moskowitz (`institutional_methods.md` §A) report that momentum crashes cluster in high-volatility, post-bear rebounds, so scaling only in such states might keep the protection without the constant cash drag.
+
+**Research question.** Does scaling H1 down only when SPY is in a high-volatility, negative-trend state improve net Sharpe and drawdown without a general return loss?
+
+- **H0:** Net Sharpe is below baseline's in train or validation, or the state is on for fewer than 3% of days in either period (result uninformative).
+- **H1 (alternative):** Net Sharpe >= baseline and max drawdown no worse in both periods, with the state on for at least 3% of days in each.
+
+| Element | Specification |
+|---|---|
+| State | At the monthly rebalance (one-bar lag as always): ON if SPY 63-day annualised realised volatility > theta **and** SPY trailing return over window W < 0. |
+| Action | When ON, multiply all H1 weights by s (remainder to cash at the risk-free rate); otherwise baseline H1. |
+| Grid (12) | theta in {0.15, 0.20, 0.25} x s in {0.25, 0.5} x W in {126, 252}. |
+| Primary | theta = 0.20, s = 0.5, W = 252 |
+| Decision rule | Supported if, in both periods: primary net Sharpe >= baseline **and** primary max drawdown <= baseline's, **and** at least 60% of the grid meets both, **and** the state is ON on >= 3% of days in each period (otherwise the verdict is "uninformative", not Supported). |
+| Stated prior | About 20% chance of Supported. The validation window (2017-2020) has few stress days, so "uninformative" or "no benefit" is the likeliest outcome. Included knowing it may fail the way H4 did. |
+| Falsification | Primary net Sharpe below baseline in either period, or state ON < 3% of days in validation. |
+
+---
+
+### H14 - Risk-based construction ladder: ERC and HRP on H1's selection (H4 variant d)
+
+**Context.** H4 variant (d), equal risk contribution, was pre-registered but never built. `institutional_methods.md` §F: optimised weights rarely beat 1/N after estimation error; shrinkage helps modestly; HRP evidence is largely author-side.
+
+**Research question.** Do ERC or HRP sizing of H1's selected assets beat equal weight net of costs?
+
+- **H0:** Neither method beats equal weight in at least 60% of selections in both periods.
+- **H1 (alternative):** At least one method does, with the same sign in train and validation.
+
+| Element | Specification |
+|---|---|
+| Selection | H1's top-k by lookback L, skip 21 (unchanged). |
+| Methods | (a) equal weight [baseline]; (b) ERC with Ledoit-Wolf shrunk covariance of 252-day trailing daily returns; (c) HRP (Lopez de Prado 2016) on the same covariance/correlation. Covariances lagged one bar. Max 25% per asset, long-only, no leverage. |
+| Grid (27 evaluations) | k in {3,5,8} x L in {63,126,252} = 9 selections x 3 methods. |
+| Primary | k = 5, L = 126, method ERC. |
+| Decision rule | A method is Supported if, in both periods, it beats equal weight at 10 bps in at least 60% (>= 6 of 9) of selections **and** its turnover is at most 125% of equal weight's. |
+| Stated prior | About 15% chance either method is Supported (1/N is hard to beat out of sample). |
+| Falsification | Neither method reaches 6 of 9 in both periods. |
+
+---
+
+### H15 - Absolute-momentum gate on H1 with cash fallback (deliberate possible negative)
+
+**Context.** `institutional_methods.md` §B: even proponents report weaker post-2008 trend results, but long-only with a cash fallback is a serious baseline. H2 (long-only trend) failed validation. This entry tests whether adding H2's hurdle to H1's selection helps, and is included knowing H2's history.
+
+**Research question.** Does zeroing any H1-selected asset whose own trailing return does not beat the risk-free rate (cash fallback) improve net Sharpe or drawdown?
+
+- **H0:** Net Sharpe is below baseline's, or max drawdown is not better, in either period.
+- **H1 (alternative):** Net Sharpe >= baseline and max drawdown strictly better in both periods.
+
+| Element | Specification |
+|---|---|
+| Rule | Take H1's top-k. An asset keeps its 1/k weight only if its trailing return over gate window G exceeds the compounded risk-free return over the same window (H2's hurdle); otherwise its weight goes to cash. |
+| Grid (9) | G in {126, 189, 252} x k in {3, 5, 8} (L = 126, skip 21). |
+| Primary | G = 252, k = 5 |
+| Decision rule | Supported if, in both periods, the primary config meets the alternative **and** at least 60% (>= 5 of 9) of the grid has net Sharpe >= baseline with better max drawdown. |
+| Stated prior | About 25% chance of Supported; the most likely outcome is lower drawdown with lower return and similar Sharpe, as H2 showed. |
+| Falsification | Primary net Sharpe below baseline in either period. |
+
+---
+
+**Not pre-registered here, and why.** Long/short momentum (existing H6) needs shorting infrastructure and bias tests first and is deferred to a separate round. A carry/value proxy (§D) and ETF-level residual momentum (§E) have no supporting evidence at this scale and would spend trials for a very low prior. The put-versus-divest comparison (§H, and the reserved H10) is forward-only and starts from live data, not a backtest.
