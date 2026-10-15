@@ -24,7 +24,15 @@ $dateOnly = Get-Date -Format "yyyy-MM-dd"
 $python = "C:\Users\Harshit Kumar\AppData\Local\Programs\Python\Python312\python.exe"
 
 Add-Content -Path $logFile -Value "`n===== SCHEDULED RUN START $stamp ====="
-cmd.exe /c "`"$python`" scripts\run_live.py --execute >> `"$logFile`" 2>&1"
+# Up to 3 attempts, 5 minutes apart: a transient API/network failure on
+# 2026-10-14 skipped that whole day. Re-running is safe because the order
+# planner counts still-pending orders as held (no double-ordering).
+foreach ($attempt in 1..3) {
+    cmd.exe /c "`"$python`" scripts\run_live.py --execute >> `"$logFile`" 2>&1"
+    if ($LASTEXITCODE -eq 0) { break }
+    Add-Content -Path $logFile -Value "===== EQUITY RUN ATTEMPT $attempt FAILED (exit $LASTEXITCODE) ====="
+    if ($attempt -lt 3) { Start-Sleep -Seconds 300 }
+}
 
 if ($LASTEXITCODE -ne 0) {
     Add-Content -Path $logFile -Value "===== EQUITY RUN FAILED (exit $LASTEXITCODE) -- skipping commit/push ====="

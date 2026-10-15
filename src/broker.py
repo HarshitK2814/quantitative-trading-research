@@ -35,6 +35,7 @@ documentation. See ``research/daily_log.md`` for that verification.
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any, Literal
@@ -54,6 +55,7 @@ OrderSide = Literal["buy", "sell"]
 TimeInForce = Literal["day", "gtc", "opg", "cls"]
 
 _TIMEOUT = 30
+_GET_ATTEMPTS = 4  # read-only requests only; order POSTs are never retried
 
 
 @dataclass(frozen=True)
@@ -162,6 +164,30 @@ class AlpacaPaperBroker:
 
     # -- internals ---------------------------------------------------------
 
+    def _get_with_retry(self, url: str, **kwargs: Any) -> requests.Response:
+        """GET with retries on timeouts, connection errors and 5xx/429.
+
+        Only used for idempotent reads. Order submission is deliberately not
+        retried, since a retried POST after a lost response could double-order.
+        (A 30s read timeout on the market-data host skipped the whole 2026-10-14
+        run.)
+        """
+        for attempt in range(1, _GET_ATTEMPTS + 1):
+            try:
+                response = self._session.get(url, timeout=_TIMEOUT, **kwargs)
+                if response.status_code in (429, 500, 502, 503, 504):
+                    raise requests.HTTPError(f"HTTP {response.status_code}")
+                return response
+            except (requests.Timeout, requests.ConnectionError,
+                    requests.HTTPError) as exc:
+                if attempt == _GET_ATTEMPTS:
+                    raise
+                delay = 2.0 * 2 ** (attempt - 1)
+                logger.warning("GET %s failed (%s); retry %d/%d in %.0fs",
+                               url, exc, attempt, _GET_ATTEMPTS - 1, delay)
+                time.sleep(delay)
+        raise AssertionError("unreachable")  # pragma: no cover
+
     def _request(self, method: str, path: str, **kwargs: Any) -> Any:
         """Issue one request, re-checking the paper endpoint at call time.
 
@@ -175,7 +201,10 @@ class AlpacaPaperBroker:
                 f"Refusing request to non-paper endpoint {base!r}."
             )
         url = f"{base}{path}"
-        response = self._session.request(method, url, timeout=_TIMEOUT, **kwargs)
+        if method.upper() == "GET":
+            response = self._get_with_retry(url, **kwargs)
+        else:
+            response = self._session.request(method, url, timeout=_TIMEOUT, **kwargs)
 
         if response.status_code >= 400:
             request_id = response.headers.get("X-Request-ID", "n/a")
@@ -248,10 +277,9 @@ class AlpacaPaperBroker:
             position off a fabricated price.
 
         """
-        response = self._session.get(
+        response = self._get_with_retry(
             "https://data.alpaca.markets/v2/stocks/trades/latest",
             params={"symbols": ",".join(symbols), "feed": "iex"},
-            timeout=_TIMEOUT,
         )
         response.raise_for_status()
         trades = response.json().get("trades", {})
@@ -407,10 +435,9 @@ class AlpacaPaperBroker:
         """
         if not symbols:
             return {}
-        response = self._session.get(
+        response = self._get_with_retry(
             "https://data.alpaca.markets/v1beta1/options/quotes/latest",
             params={"symbols": ",".join(symbols)},
-            timeout=_TIMEOUT,
         )
         response.raise_for_status()
         quotes = response.json().get("quotes", {})

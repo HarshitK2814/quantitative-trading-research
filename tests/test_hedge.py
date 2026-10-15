@@ -293,3 +293,27 @@ def test_fill_update_note_is_clean_not_literal_nan() -> None:
     update_hedge_fills(broker)
     trades = load_hedge_trades()
     assert trades.iloc[-1]["note"] == "[fill update]"
+
+
+def test_broker_get_retries_transient_timeouts(monkeypatch) -> None:
+    import requests
+
+    from src import broker as broker_mod
+
+    monkeypatch.setattr(broker_mod.time, "sleep", lambda _s: None)
+    calls = {"n": 0}
+
+    class _Resp:
+        status_code = 200
+
+    class _Session:
+        def get(self, url, **kwargs):
+            calls["n"] += 1
+            if calls["n"] < 3:
+                raise requests.ReadTimeout("slow")
+            return _Resp()
+
+    b = object.__new__(broker_mod.AlpacaPaperBroker)
+    b._session = _Session()
+    assert b._get_with_retry("https://x").status_code == 200
+    assert calls["n"] == 3

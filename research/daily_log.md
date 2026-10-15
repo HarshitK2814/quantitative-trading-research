@@ -758,3 +758,16 @@ Tests added for each. Strategy parameters (126/21/k=5, long-only, equal weight)
 are unchanged. **Not done, deliberately:** no new sleeve, no parameter change.
 Any improvement must be pre-registered and validated before it touches live
 capital (see `src/sleeves.py`).
+
+### 2026-10-15 (later) — Reliability fixes after two failed nightly legs
+
+- **2026-10-14 equity run failed** on a 30s read timeout from the market-data
+  host, so that day has no snapshot/commit. Fixes: idempotent GETs retry with
+  backoff (`broker._get_with_retry`; order POSTs are never retried), and the
+  scheduler wrapper retries the equity run up to 3x, 5 min apart.
+- **2026-10-13 hedge run failed**: the selected put had no usable quote, so the
+  limit price was 0 and Alpaca returned HTTP 422. Because a roll closes the old
+  put first, a failure there could leave the book unhedged. `run_hedge.py` now
+  skips cleanly (touching nothing) when there is no usable quote.
+- The missing 2026-10-14 snapshot is a known gap and is not backfilled; the
+  journal is append-only.
