@@ -884,3 +884,17 @@ under 0.95).
 trend) stays reserved and unregistered. Freeze rule: at most one candidate; if
 none is Supported the 2021-2025 test window stays untouched and that is the
 result. No change to live capital.
+
+
+---
+
+## 2026-10-15 - Round 2 (H11-H15) run on train + validation: all null, nothing frozen
+
+Code: `src/round2.py`, `src/construction.py`, `scripts/run_round2.py` (bias tests in `tests/test_round2.py`, `tests/test_construction.py`). Prices loaded only through 2020-12-31; the 2021-2025 test window was not touched. Full tables: `research/round2_results.md`. Rules applied literally as pre-registered; 113 new trials (cumulative ledger >= 438).
+
+- **H11 band/partial adjustment: NOT SUPPORTED.** Primary turnover fell only to 96-97% of baseline (needed <=75%) and Sharpe was marginally below baseline in both periods (0.483 vs 0.488; 0.852 vs 0.859). Monthly top-5 equal-weight changes move in 20% steps, so a 4% band almost never binds.
+- **H13 regime scaling: NOT SUPPORTED.** Strong in train (Sharpe 0.56 vs 0.49, max drawdown -24.9% vs -39.8%, 12/12 grid) then reversed in validation (0.75 vs 0.86, 0/12). Same train-to-validation sign flip as H4, the failure pattern the pre-registration warned about.
+- **H15 absolute gate: NOT SUPPORTED.** Train 0.60 vs 0.47, validation 0.80 vs 0.86, 0/9. Same flip.
+- **H14 ERC/HRP: NOT SUPPORTED.** ERC beat equal weight in 8/9 selections in train but 2/9 in validation; HRP 7/9 then 5/9 (6 needed). Risk-parity sizing cut drawdown (primary max drawdown -20% ERC / -17% HRP vs -25%) but gave up return; Sharpe about equal (0.857 / 0.874 vs 0.859).
+- **H12 diagnostic: rejected by the rule, borderline.** Median validation cash-drag share 0.48 (threshold 0.5): cash drag explains about half the H4 validation shortfall, not clearly a majority; median timing value -0.13 in validation vs +0.06 in train.
+- **Outcome:** no candidate frozen; one-touch test not run; test window untouched. Live book unchanged. Every protective overlay improved train and failed validation.
