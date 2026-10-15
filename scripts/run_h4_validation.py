@@ -35,8 +35,11 @@ def run(prices, rf, lb, k, vt):
     return run_backtest(prices, apply_volatility_target(w, base.returns, 0.10),
                         cost_bps=10.0, rf_daily=rf)
 
-for label, start, stop in (("TRAIN", SPLITS.train_start, SPLITS.train_end),
-                           ("VALIDATION", SPLITS.validation_start, SPLITS.validation_end)):
+windows = (
+    ("TRAIN", SPLITS.train_start, SPLITS.train_end),
+    ("VALIDATION", SPLITS.validation_start, SPLITS.validation_end),
+)
+for label, start, stop in windows:
     hist = px.loc[: str(stop)]
     rf = align_risk_free(rf_all, hist.index)
     mask = hist.index >= pd.Timestamp(start)
@@ -59,8 +62,11 @@ for label, start, stop in (("TRAIN", SPLITS.train_start, SPLITS.train_end),
         for lb, k in product((21, 63, 126, 189, 252), (3, 4, 5, 6, 8)):
             a = run(hist, rf, lb, k, False).returns[mask]
             b = run(hist, rf, lb, k, True).returns[mask]
-            sa = summarise(a, rf=rf[mask])["sharpe"]; sb = summarise(b, rf=rf[mask])["sharpe"]
-            ew_s.append(sa); vt_s.append(sb); gains.append(sb - sa)
+            sa = summarise(a, rf=rf[mask])["sharpe"]
+            sb = summarise(b, rf=rf[mask])["sharpe"]
+            ew_s.append(sa)
+            vt_s.append(sb)
+            gains.append(sb - sa)
         print(f"\nValidation grid (25 configs): VT10 beats EW in "
               f"{np.mean(np.array(gains) > 0):.0%}; median Sharpe EW "
               f"{np.median(ew_s):.3f} vs VT10 {np.median(vt_s):.3f}; "
