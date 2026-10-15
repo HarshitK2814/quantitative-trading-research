@@ -809,3 +809,32 @@ universe itself, not the signal, caps what H1 can do.
 evaluated across H1/H4/H7 (H2/H3/H6 counted separately in overfitting.md).
 
 **Decision (dated, not a reaction to P&L):** live book unchanged. No new sleeve.
+
+## 2026-10-15 — Measured slippage from our own fills (Task 1)
+
+Added a read-only ledger reader (`src/ledger.py`) and a report script
+(`scripts/analyze_slippage.py` -> `research/slippage_study.md`). Input is
+`portfolio/trades.csv`, deduplicated to one row per filled `order_id`
+(114 orders). Re-logged duplicate fill rows (11 orders, 49 rows, identical
+values) were removed.
+
+Sign: positive = worse for us. Definition is implementation shortfall against
+the reference price at order generation (includes drift until fill), not pure
+spread.
+
+Measured (bps, n = 114):
+- Mean -1.70, median 0.51, 5%-winsorised mean -0.46.
+- p90 of |slippage| 52.1; std 33.3; range -149.8 to +134.0.
+- Share of fills worse than 10 bps: 8.8% overall; 4.8% for notional <5k
+  (n = 83); 20% for 5k-20k (n = 30); 1 fill above 20k.
+
+Read against the 10 bps backtest assumption: the central tendency sits well
+inside 10 bps, so the assumption is not contradicted at the median. The tails
+are not covered: about 1 fill in 11 cost more than 10 bps, and the 5k-20k
+bucket is worse. The assumption is not clearly conservative for large or tail
+fills.
+
+Caveats: paper fills are simulated and likely optimistic. ETF liquidity here
+is extreme. The sample covers only a few weeks (2026-09-09 to 2026-10-14). The
+heavy tails appear to come mostly from reference-price staleness, not market
+impact. This is evidence about the cost assumption, not proof of it.
