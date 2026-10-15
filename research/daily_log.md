@@ -857,7 +857,7 @@ per-period values and each candidate's own skew and kurtosis.
 
 What this means: both candidates beat the luck-only benchmark, but neither
 reaches the 0.95 level that would count as strong evidence. A DSR of 0.78 means
-roughly a 22% chance the H1 edge is a selection artefact. 0.86 for H4 is
+the evidence that H1's true Sharpe beats the luck-only expectation is moderate, not conclusive (DSR is a probability against that benchmark, not a literal chance of artefact). 0.86 for H4 is
 better but still short of strong, and the H4 candidate was picked as the
 best of 175, so it carries the heaviest selection. These are upper bounds:
 the ledger leaves out the H2/H3/H6/H7 trials, so the true N is larger and the
