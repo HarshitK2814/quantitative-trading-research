@@ -733,3 +733,28 @@ deployment and deployed anyway as a forward test.
   needs to be tested fairly), H10 pre-registration with the corrected prior.
 - Check Frazzini/Israel/Moskowitz trading-cost estimates against the 10bps
   headline when writing `research/transaction_cost_model.md`.
+
+## 2026-10-15 — Live-run bugs found and fixed (no change to strategy spec)
+
+Triggered by reviewing the live account after a run of small losses. The loss
+itself (~-1.4% in five weeks) is within noise and is **not** what was fixed.
+Reading the journal found three execution defects:
+
+1. **Double-ordering (2026-10-12).** A second run while orders from the first
+   were still `pending_new` re-planned the same trades against the old book.
+   Gross exposure reached 105.7% and cash went to -$5.7k, breaching the
+   no-leverage rule. Fix: `execution.apply_pending_orders` counts unfilled
+   order quantity as held; run_live passes open orders through it.
+2. **Daily rebalance in a "monthly" strategy.** `run_live.py` used
+   `rebalance="D"`, so the top-5 was re-picked every run (turnover ~0.46 on
+   several days; XLF 0 -> 305 -> sold 307). H1's pre-registered schedule is
+   monthly; this was a deviation from the pre-registration, now removed.
+3. **"Month-end" resolved to today.** `rebalance_schedule` takes the last
+   available bar of each month, which for the open month is the current day, so
+   merely switching to `ME` would not have fixed (2). The live signal is now
+   computed through the last *completed* month (`completed_months_only`).
+
+Tests added for each. Strategy parameters (126/21/k=5, long-only, equal weight)
+are unchanged. **Not done, deliberately:** no new sleeve, no parameter change.
+Any improvement must be pre-registered and validated before it touches live
+capital (see `src/sleeves.py`).

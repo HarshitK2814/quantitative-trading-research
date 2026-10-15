@@ -134,3 +134,26 @@ def test_uses_only_the_latest_available_date() -> None:
     sleeve = Sleeve("s1", "H1", 1.0, growing_signal)
     combined, per_sleeve = combined_target_weights([sleeve], prices)
     assert combined["A"] == pytest.approx((len(prices) - 1) * 0.01)
+
+
+def test_live_signal_holds_last_month_end_target_all_month() -> None:
+    """The live book must not re-pick holdings on every day of the month."""
+    import numpy as np
+
+    from scripts.run_live import completed_months_only
+    from src.signals import cross_sectional_momentum
+
+    rng = np.random.default_rng(0)
+    idx = pd.bdate_range("2024-01-01", "2025-06-30")
+    cols = list("ABCDEFGH")
+    prices = pd.DataFrame(
+        100 * np.exp(np.cumsum(rng.normal(0, 0.01, (len(idx), 8)), axis=0)),
+        index=idx, columns=cols,
+    )
+    picks = set()
+    for day in pd.bdate_range("2025-06-02", "2025-06-27"):
+        w = cross_sectional_momentum(
+            completed_months_only(prices.loc[:day]), rebalance="ME"
+        ).dropna(how="all").iloc[-1]
+        picks.add(tuple(w[w > 0].index))
+    assert len(picks) == 1

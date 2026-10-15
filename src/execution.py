@@ -25,7 +25,7 @@ from __future__ import annotations
 import csv
 import logging
 import math
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -53,6 +53,35 @@ class PlannedOrder:
     weight_delta: float
     notional: float
     reason: str
+
+
+def apply_pending_orders(
+    positions: dict[str, Position], open_orders: list[dict]
+) -> dict[str, Position]:
+    """Return positions adjusted for orders submitted but not yet filled.
+
+    ``plan_orders`` reconciles against filled positions only. Market orders
+    placed outside regular hours stay ``pending_new`` until the next open, so a
+    second run in that window would see the old book, plan the same trades
+    again, and double them (this took gross exposure to 105.7% on 2026-10-12).
+    Treating pending quantity as already held makes a re-run idempotent.
+    """
+    adjusted = dict(positions)
+    for order in open_orders:
+        symbol = order.get("symbol")
+        if not symbol or "/" in symbol or len(symbol) > 6:  # skip options/crypto
+            continue
+        remaining = float(order.get("qty") or 0) - float(order.get("filled_qty") or 0)
+        signed = remaining if order.get("side") == "buy" else -remaining
+        held = adjusted.get(symbol)
+        if held is None:
+            adjusted[symbol] = Position(
+                symbol=symbol, qty=signed, market_value=0.0,
+                avg_entry_price=0.0, current_price=0.0, unrealised_pl=0.0,
+            )
+        else:
+            adjusted[symbol] = replace(held, qty=held.qty + signed)
+    return adjusted
 
 
 def plan_orders(

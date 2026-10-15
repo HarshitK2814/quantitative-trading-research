@@ -10,7 +10,12 @@ import pytest
 
 from src.broker import Position
 from src.config import RiskLimits
-from src.execution import compute_slippage_bps, estimate_turnover, plan_orders
+from src.execution import (
+    apply_pending_orders,
+    compute_slippage_bps,
+    estimate_turnover,
+    plan_orders,
+)
 from src.risk import check_and_adjust, current_drawdown, exposure_report
 
 LIMITS = RiskLimits()
@@ -269,3 +274,28 @@ def test_slippage_sign_convention() -> None:
 def test_slippage_is_none_without_a_fill() -> None:
     assert compute_slippage_bps(100.0, None, "buy") is None
     assert compute_slippage_bps(0.0, 100.0, "buy") is None
+
+
+def test_pending_orders_prevent_double_ordering() -> None:
+    """Re-running while orders are unfilled must not re-submit them."""
+    target = pd.Series({"XLF": 0.2})
+    prices = {"XLF": 50.0}
+    first = plan_orders(target, {}, 100_000.0, prices)
+    assert first[0].qty == 400
+
+    pending = [{"symbol": "XLF", "side": "buy", "qty": "400", "filled_qty": "0"}]
+    held = apply_pending_orders({}, pending)
+    assert plan_orders(target, held, 100_000.0, prices) == []
+
+
+def test_pending_sell_reduces_effective_position() -> None:
+    pos = {"XLE": _position("XLE", 100, 60.0)}
+    pending = [{"symbol": "XLE", "side": "sell", "qty": "40", "filled_qty": "10"}]
+    assert apply_pending_orders(pos, pending)["XLE"].qty == 70
+    assert pos["XLE"].qty == 100  # input not mutated
+
+
+def test_pending_option_orders_are_ignored() -> None:
+    pending = [{"symbol": "SPY261023P00725000", "side": "buy", "qty": "1",
+                "filled_qty": "0"}]
+    assert apply_pending_orders({}, pending) == {}

@@ -46,6 +46,7 @@ from src.broker import AlpacaPaperBroker
 from src.config import SPLITS, UNIVERSE
 from src.data import load_prices
 from src.execution import (
+    apply_pending_orders,
     estimate_turnover,
     load_snapshots,
     plan_orders,
@@ -72,7 +73,7 @@ SLEEVES: list[Sleeve] = [
         name="H1-momentum-126-21-k5-monthly",
         hypothesis_id="H1",
         capital_fraction=1.0,
-        signal_fn=lambda prices: cross_sectional_momentum(prices, rebalance="D"),
+        signal_fn=lambda prices: cross_sectional_momentum(prices, rebalance="ME"),
         allow_short=False,
         active=True,
         note="Deployed 2026-09-05 as a forward test of a pre-registered, "
@@ -89,15 +90,27 @@ logger = logging.getLogger("run_live")
 pd.set_option("display.width", 200)
 
 
+def completed_months_only(prices: pd.DataFrame) -> pd.DataFrame:
+    """Drop bars of the still-open month so "month-end" means a real month-end.
+
+    ``rebalance_schedule`` selects the last *available* bar of each calendar
+    month, which for the current month is simply today -- so without this the
+    "monthly" signal would re-form every day.
+    """
+    month_start = pd.Timestamp(prices.index[-1]).to_period("M").to_timestamp()
+    return prices.loc[prices.index < month_start]
+
+
 def build_target_weights(
     as_of: date,
 ) -> tuple[pd.Series, pd.Timestamp, dict[str, pd.Series]]:
     """Compute today's combined target weights across all active sleeves.
 
-    Each sleeve's signal reblances daily so its vector always reflects the
-    current top-k; the execution engine's min-notional filter suppresses
-    trading when nothing has changed, which reproduces monthly turnover
-    without needing to be run on exactly the right calendar day.
+    Each sleeve rebalances on month-end (H1's pre-registered schedule); the
+    combiner uses the latest non-empty row, so the book holds the last
+    month-end target on every other day. (Until 2026-10-15 this used a daily
+    schedule, which flipped the top-5 between runs and contradicted the
+    pre-registration -- see research/daily_log.md.)
 
     Returns:
         The combined weight vector, the signal date it was formed from, and
@@ -106,7 +119,9 @@ def build_target_weights(
     """
     validate_allocation(SLEEVES)
     prices = load_prices(UNIVERSE, SPLITS.history_start, as_of, refresh=True)
-    combined, per_sleeve = combined_target_weights(SLEEVES, prices)
+    combined, per_sleeve = combined_target_weights(
+        SLEEVES, completed_months_only(prices)
+    )
     return combined, prices.index[-1], per_sleeve
 
 
@@ -199,8 +214,15 @@ def main() -> None:
             print(f"  NOTE: no IEX print for {missing}; "
                   f"falling back to position marks where held.")
 
+        open_orders = broker.get_orders(status="open")
+        if open_orders:
+            print(f"Open (unfilled) orders: {len(open_orders)} -- "
+                  f"counted as already held to avoid double-ordering.")
         planned = plan_orders(
-            report.adjusted, positions, account.equity, prices_now
+            report.adjusted,
+            apply_pending_orders(positions, open_orders),
+            account.equity,
+            prices_now,
         )
         turnover = estimate_turnover(planned, account.equity)
 
