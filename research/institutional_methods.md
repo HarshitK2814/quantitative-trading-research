@@ -228,4 +228,4 @@ Ordered by how directly they address a failure already observed in this project.
 **Excluded on purpose:** intraday/market-making (§J: paper fills and IEX data are not a
 valid cost test; research-only), anything inferred from 13F filings (§K: a 13F shows
 delayed long positions only, not strategy or performance), and any claim sourced only
-from forums (§L: 0 of 12 forum claims were verified).
+from forums (§L register: 1 of 12 claims supported, and only as a description of practice; 2 contradicted in whole or part; 9 unverified).
