@@ -31,3 +31,4 @@ data/processed/*.parquet
 logs/
 .DS_Store
 Thumbs.db
+.superpowers/
