@@ -843,3 +843,23 @@ is extreme. The sample covers only a few weeks (2026-09-09 to 2026-10-14).
 Heavy tails may reflect price drift between order generation and fill; this
 analysis does not separate drift from market impact (hypothesis, not tested
 here). This is evidence about the cost assumption, not proof of it.
+
+## 2026-10-15 — Deflated Sharpe applied to the H1+H4 train trial ledger
+
+Script: scripts/run_ledger_dsr.py (train 2007-2016 only, 10 bps). Output:
+research/deflated_sharpe.md. Sharpes below are annualised; the test uses
+per-period values and each candidate's own skew and kurtosis.
+
+- H1 primary 126/k5/skip21: Sharpe 0.472 against the 50-config H1 grid.
+  Expected best-of-50 Sharpe from luck alone is 0.224. DSR = 0.783.
+- Best H4 train config (IV63 lb=252 k=8): Sharpe 0.605 against the 175-trial
+  H1+H4 ledger. Luck-only max is 0.263. DSR = 0.858.
+
+What this means: both candidates beat the luck-only benchmark, but neither
+reaches the 0.95 level that would count as strong evidence. A DSR of 0.78 means
+roughly a 22% chance the H1 edge is a selection artefact. 0.86 for H4 is
+better but still short of strong, and the H4 candidate was picked as the
+best of 175, so it carries the heaviest selection. These are upper bounds:
+the ledger leaves out the H2/H3/H6/H7 trials, so the true N is larger and the
+true DSR lower. This is suggestive, not conclusive. The numbers do not
+change the live strategy.
