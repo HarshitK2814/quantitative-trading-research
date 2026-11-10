@@ -45,12 +45,26 @@ jobs:
           if [ "$EXECUTE" = "true" ]; then python scripts/run_session.py --execute;
           else python scripts/run_session.py; fi
       - name: Save log and state
+        if: always()
         run: |
+          if [ "${{ github.ref_name }}" != "main" ]; then
+            echo "Not on main (${{ github.ref_name }}); skipping commit and push."
+            exit 0
+          fi
           git config user.name "session-bot"
           git config user.email "session-bot@users.noreply.github.com"
           git add portfolio/session_log.csv portfolio/session_state.json || true
-          git diff --cached --quiet || {
-            git commit -m "auto: session log $(date -u +%F-%H%M)"
-            git pull --rebase origin main
-            git push
-          }
+          if git diff --cached --quiet; then
+            echo "No changes to save."
+            exit 0
+          fi
+          git commit -m "auto: session log $(date -u +%F-%H%M)"
+          for i in 1 2 3; do
+            if git pull --rebase origin main && git push; then
+              exit 0
+            fi
+            echo "Push attempt $i failed; retrying."
+            sleep 5
+          done
+          echo "All push attempts failed."
+          exit 1
