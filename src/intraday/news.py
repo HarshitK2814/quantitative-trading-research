@@ -1,39 +1,51 @@
-"""Headlines from the Alpaca news API (free with paper keys)."""
+"""Headlines from Yahoo Finance via yfinance (free, no key), one call per symbol."""
 
 from __future__ import annotations
 
 import logging
 
-import requests
-
 logger = logging.getLogger(__name__)
-NEWS_URL = "https://data.alpaca.markets/v1beta1/news"
+MAX_LEN = 200
 
 
-def _api_symbol(sym: str) -> str:
-    return sym.replace("/", "")
+def _yahoo_symbol(sym: str) -> str:
+    return sym.replace("/", "-")
+
+
+def _default_news(sym_yf: str) -> list[dict]:
+    import yfinance as yf
+
+    try:
+        return yf.Ticker(sym_yf).news
+    except Exception:
+        # yfinance 0.2.65: Ticker.news endpoint returns "Yahoo is down"; search works.
+        return yf.Search(sym_yf, news_count=10).news
+
+
+def _title(item) -> str | None:
+    if not isinstance(item, dict):
+        return None
+    content = item.get("content")
+    title = content.get("title") if isinstance(content, dict) else None
+    title = title or item.get("title")
+    if not isinstance(title, str):
+        return None
+    clean = " ".join(title.split())[:MAX_LEN]
+    return clean or None
 
 
 def fetch_headlines(
-    symbols: list[str], key_id: str, secret: str, limit: int = 5, get=requests.get
-) -> dict[str, list[str]]:
-    """Return up to ``limit`` recent headlines per symbol. Errors give empty lists."""
-    out: dict[str, list[str]] = {s: [] for s in symbols}
-    try:
-        resp = get(
-            NEWS_URL,
-            params={"symbols": ",".join(_api_symbol(s) for s in symbols),
-                    "limit": 50, "sort": "desc"},
-            headers={"APCA-API-KEY-ID": key_id, "APCA-API-SECRET-KEY": secret},
-            timeout=20,
-        )
-        resp.raise_for_status()
-        by_api = {_api_symbol(s): s for s in symbols}
-        for item in resp.json().get("news", []):
-            for api_sym in item.get("symbols", []):
-                sym = by_api.get(api_sym)
-                if sym and len(out[sym]) < limit:
-                    out[sym].append(item["headline"])
-    except Exception as exc:  # news is advisory; never crash a session
-        logger.warning("news fetch failed: %s", exc)
+    symbols: list[str], limit: int = 5, ticker_news=None
+) -> dict[str, list[str] | None]:
+    """Up to ``limit`` headlines per symbol. ``None`` means that fetch failed."""
+    getter = ticker_news or _default_news
+    out: dict[str, list[str] | None] = {}
+    for sym in symbols:
+        try:
+            titles = [t for t in (_title(i) for i in (getter(_yahoo_symbol(sym)) or []))
+                      if t]
+            out[sym] = titles[:limit]
+        except Exception as exc:  # advisory; never crash a session
+            logger.warning("news fetch failed for %s: %s", sym, type(exc).__name__)
+            out[sym] = None
     return out

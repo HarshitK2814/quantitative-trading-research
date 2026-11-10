@@ -32,9 +32,11 @@ class Verdict:
 
 
 def review_trade(
-    symbol: str, headlines: list[str], api_key: str, post=requests.post
+    symbol: str, headlines: list[str] | None, api_key: str, post=requests.post
 ) -> Verdict:
     """Ask Groq to review a buy. Any failure returns a veto (fail safe)."""
+    if headlines is None:
+        return Verdict("veto", "news unavailable")
     if not headlines:
         return Verdict("ok", "no news")
     if not api_key:
@@ -57,7 +59,7 @@ def review_trade(
         data = json.loads(resp.json()["choices"][0]["message"]["content"])
         action = data.get("action")
         if action not in _VALID:
-            return Verdict("veto", f"invalid action {action!r}")
+            return Verdict("veto", f"invalid action {action!r}"[:60])
         return Verdict(action, str(data.get("reason", ""))[:200])
     except Exception as exc:
         logger.warning("groq gate failed: %s", exc)
