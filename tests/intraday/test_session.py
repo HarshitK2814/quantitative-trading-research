@@ -16,7 +16,8 @@ from src.intraday.session import run_session
 from src.intraday.strategies import StrategySpec, trend_signal
 
 NOW = datetime(2026, 11, 10, 14, 50, tzinfo=UTC)
-UP = pd.Series(np.linspace(100, 300, 300), index=pd.date_range("2025-01-01", periods=300))
+UP = pd.Series(np.linspace(100, 300, 300),
+               index=pd.date_range(end="2026-11-09", periods=300))
 DOWN = UP[::-1].set_axis(UP.index)
 
 
@@ -219,3 +220,67 @@ def test_stop_loss_is_durable_until_signal_resets(tmp_path):
     assert "A" not in json.loads((tmp_path / "s.json").read_text())["stopped"]
     run(b2, {"A": UP}, "close")
     assert len(b2.orders) == 1 and b2.orders[0][2] == "buy"
+
+
+def test_missing_data_holds_position_and_keeps_stopped(tmp_path):
+    (tmp_path / "s.json").write_text(
+        '{"peak_equity": 100000, "day": "2026-11-10", "stopped": {"A": "2026-11-05"}}')
+    held = {"A": Position("A", 50, 5000, 100, 100, 0)}
+    b = FakeBroker(positions=held)
+    _run(tmp_path, b, {}, _spec())
+    assert b.orders == []
+    assert "A" in json.loads((tmp_path / "s.json").read_text())["stopped"]
+
+
+def test_stale_data_holds_position_and_keeps_stopped(tmp_path):
+    (tmp_path / "s.json").write_text(
+        '{"peak_equity": 100000, "day": "2026-11-10", "stopped": {"A": "2026-11-05"}}')
+    held = {"A": Position("A", 50, 5000, 100, 100, 0)}
+    b = FakeBroker(positions=held)
+    old = DOWN.iloc[:-10]          # last bar 10 days before today
+    _run(tmp_path, b, {"A": old}, _spec())
+    assert b.orders == []
+    assert "A" in json.loads((tmp_path / "s.json").read_text())["stopped"]
+
+
+def test_stop_loss_fires_even_with_missing_data(tmp_path):
+    held = {"A": Position("A", 50, 4500, 100, 90, -500)}
+    b = FakeBroker(positions=held)
+    _run(tmp_path, b, {}, _spec(), prices={"A": 90.0})
+    assert b.orders == [("A", 50, "sell", "day")]
+    assert "A" in json.loads((tmp_path / "s.json").read_text())["stopped"]
+
+
+def test_stale_state_blocks_buys_allows_sells(tmp_path):
+    stale = '{"peak_equity": 100000, "day": "2026-11-01"}'
+    (tmp_path / "s.json").write_text(stale)
+    b = FakeBroker()
+    rows = _run(tmp_path, b, {"A": UP}, _spec())
+    assert b.orders == [] and rows[0]["note"] == "state file stale (possible lost kill-switch state)"
+    (tmp_path / "2").mkdir()
+    (tmp_path / "2" / "s.json").write_text(stale)
+    held = {"A": Position("A", 50, 5000, 100, 100, 0)}
+    b2 = FakeBroker(positions=held)
+    _run(tmp_path / "2", b2, {"A": DOWN}, _spec())
+    assert b2.orders == [("A", 50, "sell", "day")]
+
+
+def test_stale_state_blocks_buys_in_dry_run(tmp_path):
+    (tmp_path / "s.json").write_text('{"peak_equity": 100000, "day": "2026-11-01"}')
+    rows = _run(tmp_path, FakeBroker(), {"A": UP}, _spec(), dry_run=True)
+    assert rows[0]["side"] == "skip" and "stale" in rows[0]["note"]
+
+
+def test_recent_state_allows_buys(tmp_path):
+    (tmp_path / "s.json").write_text('{"peak_equity": 100000, "day": "2026-11-06"}')
+    b = FakeBroker()
+    _run(tmp_path, b, {"A": UP}, _spec())
+    assert len(b.orders) == 1
+
+
+def test_partial_sell_when_target_below_held(tmp_path):
+    # target 5% of 100k = 5000; held 80 sh * $100 = 8000 -> sell 30, keep 50
+    held = {"A": Position("A", 80, 8000, 100, 100, 0)}
+    b = FakeBroker(positions=held)
+    _run(tmp_path, b, {"A": UP}, _spec())
+    assert b.orders == [("A", 30, "sell", "day")]

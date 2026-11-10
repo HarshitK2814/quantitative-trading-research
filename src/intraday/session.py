@@ -5,7 +5,7 @@ from __future__ import annotations
 import copy
 import csv
 import logging
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 from src.config import RISK
@@ -21,6 +21,8 @@ from src.intraday.schedule import ET
 from src.intraday.strategies import completed_bars, target_weights
 
 logger = logging.getLogger(__name__)
+
+STATE_STALE_DAYS = 5
 
 LOG_FIELDS = ["ts", "session", "symbol", "strategy", "side", "qty", "price",
               "news_action", "news_reason", "note", "dry_run", "order_id"]
@@ -48,7 +50,15 @@ def run_session(
     """Run one session and return the log rows. Only registry symbols are touched."""
     today_et = now_utc.astimezone(ET).date()
     acct = broker.get_account()
-    state = update_state(copy.deepcopy(load_state(state_path)), acct.equity,
+    loaded = load_state(state_path)
+    state_stale = False
+    if loaded.get("day"):
+        try:
+            age = (today_et - date.fromisoformat(loaded["day"])).days
+        except ValueError:
+            age = STATE_STALE_DAYS + 1
+        state_stale = age > STATE_STALE_DAYS
+    state = update_state(copy.deepcopy(loaded), acct.equity,
                          today_et.isoformat(), limits)
     key = f"{today_et.isoformat()}:{name}"
     if key in state["ran"]:
@@ -62,15 +72,15 @@ def run_session(
     owner = {s: spec.id for spec in registry.values() if spec.active for s in spec.symbols}
     classes = {s: spec.asset_class for spec in registry.values() if spec.active
                for s in spec.symbols}
-    raw = target_weights(registry, closes)
+    raw = target_weights(registry, closes, as_of=today_et)
     stopped = state.setdefault("stopped", {})
-    for sym in [s for s in stopped if raw.get(s, 0.0) == 0.0]:
+    for sym in [s for s in stopped if s in raw and raw[s] == 0.0]:
         del stopped[sym]
     weights = cap_weights(raw, classes, limits)
 
     positions = {_norm(s): p for s, p in broker.get_positions().items()}
     notes: dict[str, str] = {}
-    for sym in weights:
+    for sym in owner:  # stop-loss uses broker positions, not closes
         pos = positions.get(_norm(sym))
         if pos and pos.avg_entry_price > 0 and \
                 pos.current_price <= pos.avg_entry_price * (1 - RISK.stop_loss_pct):
@@ -79,6 +89,8 @@ def run_session(
             stopped[sym] = today_et.isoformat()
 
     allowed, why = buys_allowed(state, acct.equity, limits)
+    if state_stale and allowed:
+        allowed, why = False, "state file stale (possible lost kill-switch state)"
     market_open = broker.is_market_open()
     rows: list[dict] = []
 

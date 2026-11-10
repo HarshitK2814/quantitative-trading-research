@@ -72,10 +72,18 @@ def completed_bars(close: pd.Series, today: date) -> pd.Series:
     return close
 
 
+STALE_DAYS = 4
+
+
 def target_weights(
-    registry: dict[str, StrategySpec], closes: dict[str, pd.Series]
+    registry: dict[str, StrategySpec], closes: dict[str, pd.Series],
+    as_of: date | None = None,
 ) -> dict[str, float]:
-    """Weight per symbol for active strategies; missing data means 0."""
+    """Weight per symbol for active strategies.
+
+    A symbol with missing, empty, stale (last close more than 4 calendar days
+    before `as_of`) or NaN-signal data is OMITTED: unknown means hold, not sell.
+    """
     out: dict[str, float] = {}
     for spec in registry.values():
         if not spec.active:
@@ -83,8 +91,11 @@ def target_weights(
         for sym in spec.symbols:
             c = closes.get(sym)
             if c is None or len(c) == 0:
-                out[sym] = 0.0
+                continue
+            if as_of is not None and (as_of - c.index[-1].date()).days > STALE_DAYS:
                 continue
             sig = float(spec.signal_fn(c).iloc[-1])
+            if sig != sig:  # NaN
+                continue
             out[sym] = sig * spec.capital_fraction / len(spec.symbols)
     return out

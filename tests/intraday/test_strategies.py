@@ -58,10 +58,27 @@ def test_target_weights_only_active_and_split_equally():
     assert w == {"A": 0.2, "B": 0.2}
 
 
-def test_target_weights_missing_data_is_zero():
+def test_target_weights_missing_data_is_omitted():
     spec = StrategySpec("T1", ("A",), "etf", 0.4,
                         lambda c: trend_signal(c, 50, 200), True)
-    assert target_weights({"T1": spec}, {})["A"] == 0.0
+    assert "A" not in target_weights({"T1": spec}, {})
+    assert "A" not in target_weights({"T1": spec}, {"A": pd.Series(dtype=float)})
+
+
+def test_target_weights_stale_or_nan_signal_is_omitted():
+    from datetime import date
+    spec = StrategySpec("T1", ("A", "B"), "etf", 0.4,
+                        lambda c: trend_signal(c, 50, 200), True)
+    idx = pd.date_range(end="2026-11-05", periods=300)
+    ok = pd.Series(range(300), index=idx, dtype=float)
+    w = target_weights({"T1": spec}, {"A": ok, "B": ok}, as_of=date(2026, 11, 9))
+    assert set(w) == {"A", "B"}                      # 4 days old is fine
+    w = target_weights({"T1": spec}, {"A": ok, "B": ok}, as_of=date(2026, 11, 10))
+    assert w == {}                                   # 5 days old is stale
+    short = pd.Series(range(10), index=idx[-10:], dtype=float)
+    nan_spec = StrategySpec("T2", ("C",), "etf", 0.4,
+                            lambda c: c.rolling(50).mean(), True)
+    assert target_weights({"T2": nan_spec}, {"C": short}) == {}
 
 
 def test_registry_symbols_are_disjoint_and_fractions_fit():
