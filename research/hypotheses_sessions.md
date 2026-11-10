@@ -33,3 +33,4 @@ Shared rules:
 - Stale or missing quotes mean skip, never trade.
 - Logged to `portfolio/session_log.csv` as strategy `O1` / `O2`.
 - No re-tuning after seeing results.
+- Clarification 2026-11-10, before any options order and with no results seen: strikes are not always $1 apart, so O2's short strike is the strike nearest 95% of spot *that has a partner exactly $5 lower*, and it must sit 4-6% below spot; otherwise skip. Quotes older than 15 minutes count as stale.
