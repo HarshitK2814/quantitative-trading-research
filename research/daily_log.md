@@ -915,3 +915,7 @@ Code: `src/round2.py`, `src/construction.py`, `scripts/run_round2.py` (bias test
 
 - Survivorship caveat: S2 universe (AAPL, MSFT, NVDA, AMZN, GOOGL) is today's mega-cap winners, chosen with hindsight, so its pass is optimistic; the gate result is weak evidence for S2.
 - Stops are checked only at the 4 daily sessions (no resting stop orders), so gaps can exceed the 8% stop; the 1% daily halt measures from the first session of the day and blocks buys only.
+
+## 2026-11-10: H1 leftovers closed (user decision)
+- Sell IWM x57 (market, day) and sell-to-close SPY261127P00720000 x2 (limit 2.76, day) submitted after hours; both queued for the open. Order ids: 62f1eade..., 42ae91a0....
+- Reason: remove H1 leftovers so the session trader's record is clean. Not a reaction to a losing day.
