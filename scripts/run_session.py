@@ -1,4 +1,6 @@
-"""Run one trading session on the dedicated session-trader PAPER account.
+"""Run one trading session on the user's existing Alpaca PAPER account.
+
+The account is shared with the retired H1 sleeve.
 
     PYTHONPATH=. python scripts/run_session.py                 # dry run, auto session
     PYTHONPATH=. python scripts/run_session.py --execute       # submit paper orders

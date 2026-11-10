@@ -39,7 +39,7 @@ def load_state(path: Path) -> dict:
             raise ValueError("state is not a JSON object")
         return {**_default_state(), **data}
     except (ValueError, OSError) as exc:
-        logger.warning("state file %s unreadable (%s); failing closed: buys blocked", path, exc)
+        logger.warning("state file %s unreadable (%s); failing closed", path, exc)
         return {**_default_state(), "killed": True}
 
 

@@ -912,3 +912,6 @@ Code: `src/round2.py`, `src/construction.py`, `scripts/run_round2.py` (bias test
 - Rule (pre-registered): Sharpe >= 0.5 and max drawdown >= -25%, window 2021-01-01 onward.
 - Outcome: S1 and S2 on. S3 off: failed the drawdown rule, not re-tuned.
 - Caveat: the S1 and S2 window is one bull-heavy period, so passing is weak evidence.
+
+- Survivorship caveat: S2 universe (AAPL, MSFT, NVDA, AMZN, GOOGL) is today's mega-cap winners, chosen with hindsight, so its pass is optimistic; the gate result is weak evidence for S2.
+- Stops are checked only at the 4 daily sessions (no resting stop orders), so gaps can exceed the 8% stop; the 1% daily halt measures from the first session of the day and blocks buys only.
