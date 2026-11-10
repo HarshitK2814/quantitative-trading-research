@@ -13,13 +13,18 @@ def _yahoo_symbol(sym: str) -> str:
 
 
 def _default_news(sym_yf: str) -> list[dict]:
+    """Ticker.news, falling back to Search. yfinance can swallow bad responses
+    and return [], so an empty Ticker result is retried via Search; if Search
+    raises, the error propagates (fetch_headlines turns it into None)."""
     import yfinance as yf
 
     try:
-        return yf.Ticker(sym_yf).news
-    except Exception:
-        # yfinance 0.2.65: Ticker.news endpoint returns "Yahoo is down"; search works.
-        return yf.Search(sym_yf, news_count=10).news
+        items = yf.Ticker(sym_yf).news
+        if items:
+            return items
+    except Exception as exc:
+        logger.warning("Ticker.news failed for %s: %r", sym_yf, exc)
+    return yf.Search(sym_yf, news_count=10).news or []
 
 
 def _title(item) -> str | None:

@@ -93,3 +93,53 @@ def test_failures_fail_safe_to_veto():
         raise RuntimeError("429")
 
     assert review_trade("AAPL", ["x"], "key", post=boom).action == "veto"
+
+
+def _fake_yf(monkeypatch, ticker_news, search_news):
+    import sys
+    import types
+
+    def _val(v):
+        if isinstance(v, Exception):
+            raise v
+        return v
+
+    class T:
+        def __init__(self, s):
+            pass
+
+        @property
+        def news(self):
+            return _val(ticker_news)
+
+    class S:
+        def __init__(self, s, news_count=10):
+            self.s = s
+
+        @property
+        def news(self):
+            return _val(search_news)
+
+    monkeypatch.setitem(sys.modules, "yfinance",
+                        types.SimpleNamespace(Ticker=T, Search=S))
+
+
+def test_default_ticker_raises_uses_search(monkeypatch):
+    _fake_yf(monkeypatch, RuntimeError("x"), [{"title": "S"}])
+    assert fetch_headlines(["AAPL"]) == {"AAPL": ["S"]}
+
+
+def test_default_ticker_empty_uses_search(monkeypatch):
+    _fake_yf(monkeypatch, [], [{"title": "S"}])
+    assert fetch_headlines(["AAPL"]) == {"AAPL": ["S"]}
+
+
+def test_default_search_raises_gives_none(monkeypatch):
+    _fake_yf(monkeypatch, [], RuntimeError("boom"))
+    assert fetch_headlines(["AAPL"]) == {"AAPL": None}
+
+
+def test_default_both_empty_is_no_news(monkeypatch):
+    _fake_yf(monkeypatch, [], [])
+    assert fetch_headlines(["AAPL"]) == {"AAPL": []}
+
