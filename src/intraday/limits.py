@@ -25,7 +25,7 @@ class SessionLimits:
 
 def _default_state() -> dict:
     return {"peak_equity": 0.0, "day": "", "day_start_equity": 0.0,
-            "killed": False, "ran": [], "stopped": {}}
+            "killed": False, "ran": [], "stopped": {}, "options": {}}
 
 
 def load_state(path: Path) -> dict:

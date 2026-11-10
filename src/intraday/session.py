@@ -45,9 +45,13 @@ def _append(path: Path, row: dict) -> None:
 def run_session(
     *, name, broker, closes, now_utc: datetime, limits: SessionLimits,
     state_path: Path, log_path: Path, registry, gate, prices: dict[str, float],
-    dry_run: bool,
+    dry_run: bool, options: bool = False,
 ) -> list[dict]:
-    """Run one session and return the log rows. Only registry symbols are touched."""
+    """Run one session and return the log rows. Only registry symbols are touched.
+
+    With ``options=True`` the late_morning session also runs the O1/O2 options
+    step (src/intraday/options_session.py) on the same state and limits.
+    """
     today_et = now_utc.astimezone(ET).date()
     acct = broker.get_account()
     loaded = load_state(state_path)
@@ -94,9 +98,10 @@ def run_session(
     market_open = broker.is_market_open()
     rows: list[dict] = []
 
-    def log(sym, side, qty, price, verdict=None, note="", order_id=""):
+    def log(sym, side, qty, price, verdict=None, note="", order_id="", strategy=None):
         row = {"ts": now_utc.isoformat(), "session": name, "symbol": sym,
-               "strategy": owner[sym], "side": side, "qty": qty, "price": price,
+               "strategy": strategy or owner[sym], "side": side, "qty": qty,
+               "price": price,
                "news_action": getattr(verdict, "action", ""),
                "news_reason": getattr(verdict, "reason", ""),
                "note": note, "dry_run": dry_run, "order_id": order_id}
@@ -150,6 +155,21 @@ def run_session(
                                       client_order_id=f"{key}:{_norm(sym)}:{side}")
             order_id = res.order_id
         log(sym, side, qty, price, verdict, notes.get(sym, ""), order_id)
+
+    if options and name == "late_morning":
+        from src.intraday.options_session import run_options
+        try:
+            run_options(
+                key=key, session=name, broker=broker, state=state,
+                equity=acct.equity, closes=closes, registry=registry, gate=gate,
+                prices=prices, now_utc=now_utc, allowed=allowed, why=why,
+                market_open=market_open, dry_run=dry_run, state_path=state_path,
+                equity_positions=positions, emit=log,
+            )
+        except Exception as exc:  # noqa: BLE001 - options must not break the session
+            logger.exception("options step failed")
+            log("OPTIONS", "error", 0, 0.0, note=f"options step failed: {exc}"[:200],
+                strategy="O2")
 
     if not dry_run:
         save_state(state_path, state)

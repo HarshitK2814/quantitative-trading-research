@@ -5,6 +5,10 @@ The account is shared with the retired H1 sleeve.
     PYTHONPATH=. python scripts/run_session.py                 # dry run, auto session
     PYTHONPATH=. python scripts/run_session.py --execute       # submit paper orders
     PYTHONPATH=. python scripts/run_session.py --session open  # force a session
+    PYTHONPATH=. python scripts/run_session.py --no-options    # skip O1/O2 step
+
+The late_morning session also runs the options sleeve (O1 SPY hedge, O2 SPY/QQQ
+put credit spreads; forward test, see research/hypotheses_sessions.md).
 """
 
 from __future__ import annotations
@@ -34,6 +38,8 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--execute", action="store_true")
     ap.add_argument("--session")
+    ap.add_argument("--no-options", action="store_true",
+                    help="Skip the O1/O2 options step in late_morning.")
     args = ap.parse_args()
 
     now = datetime.now(UTC)
@@ -61,7 +67,7 @@ def main() -> None:
         name=name, broker=broker, closes=closes, now_utc=now, limits=SessionLimits(),
         state_path=Path(STATE), log_path=Path(LOG), registry=REGISTRY,
         gate=lambda sym: review_trade(sym, headlines.get(sym), groq_key),
-        prices=prices, dry_run=not args.execute,
+        prices=prices, dry_run=not args.execute, options=not args.no_options,
     )
     for r in rows:
         print(r["session"], r["symbol"], r["side"], r["qty"], r["note"], r["news_action"])
