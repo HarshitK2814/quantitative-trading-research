@@ -1,0 +1,8 @@
+ts,session,symbol,strategy,side,qty,price,news_action,news_reason,note,dry_run,order_id
+2026-11-10T15:14:34.633743+00:00,open,SPY,S1,sell,14,751.12,,,,False,9b0c10ba-3372-4a6f-b422-83641ec0de37
+2026-11-10T15:14:34.633743+00:00,open,QQQ,S1,sell,23.0,678.79,,,,False,8abaa7a2-3435-4251-96ba-87fcc940d620
+2026-11-10T15:14:34.633743+00:00,open,XLK,S1,sell,85,170.69,,,,False,e2bdba3e-2d18-48e3-8494-964bc460d46b
+2026-11-10T15:14:34.633743+00:00,open,XLF,S1,skip,0,58.005,veto,GROQ_API_KEY missing,news veto,False,
+2026-11-10T15:14:34.633743+00:00,open,XLE,S1,skip,0,61.89,veto,GROQ_API_KEY missing,news veto,False,
+2026-11-10T15:14:34.633743+00:00,open,XLV,S1,sell,78,187.32,,,,False,e0acb1ef-7c90-44c0-8c4c-5c9ddeca487c
+2026-11-10T15:14:34.633743+00:00,open,NVDA,S2,skip,0,173.105,veto,GROQ_API_KEY missing,news veto,False,
