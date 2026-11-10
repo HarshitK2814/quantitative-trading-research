@@ -23,6 +23,7 @@ CAP_PCT = {"hedge": 0.01, "spread": 0.01}
 SPREAD_UNDERLYINGS = ("SPY", "QQQ")
 HEDGE_UNDERLYING = "SPY"
 SHORT_OTM = 0.05
+SHORT_OTM_TOL = 0.01   # short strike must sit 4-6% below spot
 SPREAD_WIDTH = 5.0
 SPREAD_MIN_DTE = 30
 SPREAD_MAX_DTE = 45
@@ -124,10 +125,13 @@ def select_spread(
         return None, "no 30-45 DTE puts"
     expiry = min(c.expiration_date for c in puts)
     chain = {c.strike_price: c for c in puts if c.expiration_date == expiry}
-    short_k = min(chain, key=lambda k: abs(k - spot * (1 - SHORT_OTM)))
+    target = spot * (1 - SHORT_OTM)
+    pairs = [k for k in chain if (k - SPREAD_WIDTH) in chain
+             and abs(k - target) <= SHORT_OTM_TOL * spot + _EPS]
+    if not pairs:
+        return None, "no strike pair $5 apart with short 4-6% below spot"
+    short_k = min(pairs, key=lambda k: abs(k - target))
     long_k = short_k - SPREAD_WIDTH
-    if long_k not in chain:
-        return None, f"no long leg at {long_k:g}"
     short_c, long_c = chain[short_k], chain[long_k]
     sq, lq = quotes.get(short_c.symbol), quotes.get(long_c.symbol)
     if not (quote_ok(sq, now) and quote_ok(lq, now)):

@@ -113,6 +113,21 @@ def test_select_spread_needs_both_legs_and_fresh_quotes():
     assert o.select_spread(cs, missing, 100.0, TODAY, NOW)[0] is None
 
 
+def test_select_spread_uses_nearest_short_strike_that_has_a_5_lower_leg():
+    cs = [put(k) for k in (90, 95, 96)]       # target 95.62; 96 nearest, 91 missing
+    quotes = {c.symbol: q(c.symbol, 2.0, 2.1) for c in cs}
+    quotes[cs[0].symbol] = q(cs[0].symbol, 0.7, 0.8)
+    plan, why = o.select_spread(cs, quotes, 100.65, TODAY, NOW)
+    assert plan is not None, why
+    assert (plan.short_strike, plan.long_strike) == (95.0, 90.0)
+
+
+def test_select_spread_refuses_short_strike_outside_4_to_6pct_otm():
+    cs = [put(k) for k in (95, 100)]          # only pair is 100/95: 0% OTM
+    quotes = {c.symbol: q(c.symbol, 2.0, 2.1) for c in cs}
+    assert o.select_spread(cs, quotes, 100.0, TODAY, NOW)[0] is None
+
+
 def test_select_spread_only_uses_30_to_45_dte():
     near = [put(k, TODAY + timedelta(days=20)) for k in (90, 95)]
     far = [put(k, TODAY + timedelta(days=60)) for k in (90, 95)]
