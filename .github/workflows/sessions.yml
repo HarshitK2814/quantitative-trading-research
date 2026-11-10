@@ -1,0 +1,56 @@
+name: Trading sessions
+
+on:
+  schedule:
+    # Fires at both the EDT and EST UTC hours; scripts/run_session.py only acts
+    # when real Eastern time is within 25 min after a session time.
+    - cron: "45 13,14 * * 1-5"   # open 09:45 ET
+    - cron: "30 15,16 * * 1-5"   # late morning 11:30 ET
+    - cron: "0 18,19 * * 1-5"    # afternoon 14:00 ET
+    - cron: "45 19,20 * * 1-5"   # pre-close 15:45 ET
+  workflow_dispatch:
+    inputs:
+      execute:
+        description: "Submit paper orders (otherwise dry run)"
+        default: "false"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sessions
+  cancel-in-progress: false
+
+jobs:
+  session:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install --quiet -r requirements.txt
+      - name: Run session
+        env:
+          ALPACA_API_KEY_ID: ${{ secrets.ALPACA_API_KEY_ID }}
+          ALPACA_API_SECRET_KEY: ${{ secrets.ALPACA_API_SECRET_KEY }}
+          ALPACA_BASE_URL: https://paper-api.alpaca.markets
+          PAPER_TRADING_ONLY: "true"
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          EXECUTE: ${{ github.event_name == 'schedule' || inputs.execute == 'true' }}
+          PYTHONPATH: .
+          PYTHONIOENCODING: utf-8
+        run: |
+          if [ "$EXECUTE" = "true" ]; then python scripts/run_session.py --execute;
+          else python scripts/run_session.py; fi
+      - name: Save log and state
+        run: |
+          git config user.name "session-bot"
+          git config user.email "session-bot@users.noreply.github.com"
+          git add portfolio/session_log.csv portfolio/session_state.json || true
+          git diff --cached --quiet || {
+            git commit -m "auto: session log $(date -u +%F-%H%M)"
+            git pull --rebase origin main
+            git push
+          }

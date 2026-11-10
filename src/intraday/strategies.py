@@ -52,11 +52,11 @@ class StrategySpec:
 REGISTRY: dict[str, StrategySpec] = {
     "S1": StrategySpec(
         "S1", ("SPY", "QQQ", "XLK", "XLF", "XLE", "XLV"), "etf", 0.40,
-        lambda c: trend_signal(c, 50, 200),
+        lambda c: trend_signal(c, 50, 200), True,
     ),
     "S2": StrategySpec(
         "S2", ("AAPL", "MSFT", "NVDA", "AMZN", "GOOGL"), "stock", 0.30,
-        meanrev_signal,
+        meanrev_signal, True,
     ),
     "S3": StrategySpec(
         "S3", ("BTC/USD", "ETH/USD"), "crypto", 0.30,

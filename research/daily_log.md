@@ -904,3 +904,11 @@ Code: `src/round2.py`, `src/construction.py`, `scripts/run_round2.py` (bias test
 - Windows task `PaperTradingDailyRun` disabled. H1 was a forward test of a rejected hypothesis; this is a dated, logged decision, not a reaction to losses.
 - H1 positions left in the account at switch-off: IWM, QQQ, SPY, XLK, XLV, plus one SPY put (SPY261127P00720000). The new bot manages only its own registry symbols; IWM and the put are unmanaged until the user decides.
 - H1 history up to this date stays valid as its own record.
+
+## 2026-11-10: session-trader gate results
+- S1 {'sharpe': 1.0313, 'max_drawdown': -0.0984, 'passed': True, 'days': 1470}
+- S2 {'sharpe': 1.1803, 'max_drawdown': -0.0776, 'passed': True, 'days': 1470}
+- S3 {'sharpe': 0.5776, 'max_drawdown': -0.5812, 'passed': False, 'days': 2140}
+- Rule (pre-registered): Sharpe >= 0.5 and max drawdown >= -25%, window 2021-01-01 onward.
+- Outcome: S1 and S2 on. S3 off: failed the drawdown rule, not re-tuned.
+- Caveat: the S1 and S2 window is one bull-heavy period, so passing is weak evidence.
