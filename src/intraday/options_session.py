@@ -136,7 +136,13 @@ def run_options(
                      note=ev["note"], order_id=(order or {}).get("id", ""), strategy=tag)
 
     positions = broker.get_option_positions()
-    orphans = o.find_orphans(opts, positions, broker.get_orders(status="open", nested=True))
+    scan_error = ""
+    try:
+        orphans = o.find_orphans(opts, positions,
+                                 broker.get_orders(status="open", nested=True))
+    except Exception as exc:  # noqa: BLE001 - closes must still run
+        orphans, scan_error = [], str(exc)[:150]
+    broken_seen: list[str] = []
 
     # 2. closes and repairs: always allowed
     for sid, sp in list(spreads.items()):
@@ -148,6 +154,7 @@ def run_options(
                 emit(_label("spread", sid, sp), "skip", 0, 0.0, strategy="O2",
                      note=f"spread {sid} legs match again; broken flag cleared")
         else:
+            broken_seen.append(sid)
             if sp["status"] != "broken":
                 spreads[sid] = sp = {**sp, "status": "broken"}
                 if not dry_run:
@@ -205,6 +212,7 @@ def run_options(
         pos = positions.get(hid)
         held = int(round(pos.qty)) if pos and pos.qty > 0 else 0
         if held != int(h["qty"]):
+            broken_seen.append(hid)
             if h["status"] != "broken":
                 hedges[hid] = h = {**h, "status": "broken"}
             emit(hid, "skip", 0, 0.0, strategy="O1",
@@ -219,9 +227,13 @@ def run_options(
             continue
         qty = min(int(h["qty"]), held)
         coid = f"{key}:O1:{hid}:close"
-        entry = {**h, "status": "pending_close", "close_client_order_id": coid}
-        if h["status"] == "broken":   # keep it flagged; still sell what is held
-            entry = {**h, "close_client_order_id": coid}
+        # A broken hedge is re-based to what is held, so the sell reconciles
+        # normally (fill -> removed) instead of staying broken forever.
+        entry = {**h, "status": "pending_close", "close_client_order_id": coid,
+                 "qty": qty,
+                 "cost_basis": round(float(h["cost_basis"]) * qty / int(h["qty"]), 2)}
+        if h["status"] == "broken":
+            entry["broken_from_qty"] = h["qty"]
         oid = place(hedges, hid, entry, "close_order_id",
                     lambda: broker.submit_option_order(
                         hid, qty, "sell", "sell_to_close", "limit", q.bid, "day", coid))
@@ -230,14 +242,19 @@ def run_options(
              else f"hedge close not confirmed: {failures[-1]}")
 
     # 3. new opens
-    broken = [eid for book in (spreads, hedges) for eid, e in book.items()
-              if e["status"] == "broken"]
+    broken = sorted(set(broken_seen) | {eid for book in (spreads, hedges)
+                                        for eid, e in book.items()
+                                        if e["status"] == "broken"})
     if not allowed:
         emit("OPTIONS", "skip", 0, 0.0, note=f"no new options: {why}", strategy=NEUTRAL)
         return
     if broken:
         emit("OPTIONS", "skip", 0, 0.0, strategy=NEUTRAL,
              note=f"no new options: BLOCKED by broken entries {broken}")
+        return
+    if scan_error:
+        emit("OPTIONS", "skip", 0, 0.0, strategy=NEUTRAL,
+             note=f"no new options: open-order scan failed: {scan_error}")
         return
     if orphans:
         emit("OPTIONS", "skip", 0, 0.0, strategy=NEUTRAL,
@@ -272,8 +289,11 @@ def _open_hedge(broker, opts, equity, prices, today, now_utc, key, registry,
     contracts = broker.get_option_contracts(und, "put", lo, hi,
                                             strike_gte=round(spot * 0.85, 2),
                                             strike_lte=round(spot, 2), limit=500)
-    target = spot * 0.95
-    contracts = sorted(contracts, key=lambda c: abs(c.strike_price - target))[:_MAX_QUOTES]
+    contracts, why = o.hedge_candidates(contracts, spot, o.tracked_symbols(opts))
+    if not contracts:
+        emit(und, "skip", 0, 0.0, strategy="O1", note=f"hedge: {why}")
+        return
+    contracts = contracts[:_MAX_QUOTES]
     quotes = broker.get_option_quotes([c.symbol for c in contracts])
     fresh = {k: v for k, v in quotes.items() if o.quote_ok(v, now_utc)}
     plan = plan_hedge(contracts, fresh, spot, exposure)
@@ -348,7 +368,8 @@ def _open_spreads(broker, opts, equity, closes, registry, gate, prices, today,
             contracts = [c for c in contracts if c.expiration_date == first]
         contracts = sorted(contracts, key=lambda c: abs(c.strike_price - target))
         quotes = broker.get_option_quotes([c.symbol for c in contracts][:_MAX_QUOTES])
-        plan, why = o.select_spread(contracts, quotes, spot, today, now_utc)
+        plan, why = o.select_spread(contracts, quotes, spot, today, now_utc,
+                                    exclude=o.tracked_symbols(opts))
         if plan is None:
             emit(und, "skip", 0, 0.0, verdict, f"spread: {why}", strategy="O2")
             continue

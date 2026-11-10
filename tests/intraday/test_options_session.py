@@ -564,3 +564,89 @@ def test_stock_exception_does_not_skip_options_closes(tmp_path):
         _session(tmp_path, b, "late_morning")
     assert b.spread_orders and b.spread_orders[0][3].endswith("O2:x:close")
     assert load_state(p)["options"]["spreads"]["x"]["status"] == "pending_close"
+
+
+# -- round 3 --------------------------------------------------------------------
+
+def test_next_day_same_expiry_picks_a_different_pair_not_shared_legs(tmp_path):
+    sp = {**_open_spread(credit=1.2), "contracts": 1, "max_loss": 380.0}
+    t = NOW + timedelta(days=1) - timedelta(minutes=1)
+    quotes = {}
+    for k, (b_, a_) in {85: (0.3, 0.4), 89: (0.7, 0.8), 90: (0.8, 0.9),
+                        94: (1.9, 2.0), 95: (2.0, 2.1), 100: (4.0, 4.2)}.items():
+        quotes[occ("SPY", k)] = OptionQuote(occ("SPY", k), b_, a_, t)
+    b = OptBroker(quotes=quotes, positions=_legs_pos())
+    b.get_option_contracts = lambda und, *a, **k: [
+        OptionContract(occ(und, k_), und, "put", float(k_), EXP, True)
+        for k_ in (85, 89, 90, 94, 95, 100)]
+    state, rows = _run(tmp_path, b, state={"options": {"spreads": {"x": sp}}},
+                       now=NOW + timedelta(days=1))
+    assert state["options"]["spreads"]["x"]["status"] == "open"   # not falsely broken
+    legs = b.spread_orders[0][0]
+    assert {lg["symbol"] for lg in legs} == {occ("SPY", 94), occ("SPY", 89)}
+
+
+def test_next_day_skips_when_only_overlapping_pairs_exist(tmp_path):
+    sp = {**_open_spread(credit=1.2), "contracts": 1, "max_loss": 380.0}
+    t = NOW + timedelta(days=1) - timedelta(minutes=1)
+    quotes = {s: OptionQuote(s, q_.bid, q_.ask, t) for s, q_ in chain_quotes().items()}
+    b = OptBroker(quotes=quotes, positions=_legs_pos())
+    _, rows = _run(tmp_path, b, state={"options": {"spreads": {"x": sp}}},
+                   now=NOW + timedelta(days=1), closes={"SPY": UP, "QQQ": DOWN})
+    assert b.spread_orders == []
+    assert any(r["symbol"] == "SPY" and "tracked" in r["note"] for r in rows)
+
+
+def test_hedge_never_uses_a_spread_leg_contract(tmp_path):
+    sp = {**_open_spread(), "max_loss": 100.0}
+    b = OptBroker(positions=_legs_pos(),
+                  quotes={k: v for k, v in chain_quotes().items() if k.startswith("SPY")})
+    eq = {"SPY": Position("SPY", 1000, 100_000, 100, 100, 0)}
+    state, rows = _run(tmp_path, b, state={"options": {"spreads": {"x": sp}}}, eq_pos=eq,
+                       closes={"SPY": DOWN, "QQQ": DOWN})
+    assert b.option_orders == []            # only 95 strike is the rule; it is tracked
+    assert any(r["strategy"] == "O1" and "tracked" in r["note"] for r in rows)
+    assert state["options"]["spreads"]["x"]["status"] != "broken"
+
+
+def test_hedge_uses_same_strike_other_expiry_when_spread_holds_one(tmp_path):
+    sp = {**_open_spread(), "max_loss": 100.0}
+    exp2 = TODAY + timedelta(days=28)
+    alt = occ("SPY", 95, exp2)
+    quotes = {k: v for k, v in chain_quotes().items() if k.startswith("SPY")}
+    quotes[alt] = OptionQuote(alt, 1.6, 1.7, NOW - timedelta(minutes=1))
+    b = OptBroker(positions=_legs_pos(), quotes=quotes)
+    b.get_option_contracts = lambda und, *a, **k: [
+        OptionContract(occ(und, k_), und, "put", float(k_), EXP, True) for k_ in MIDS
+    ] + [OptionContract(alt, und, "put", 95.0, exp2, True)]
+    eq = {"SPY": Position("SPY", 1000, 100_000, 100, 100, 0)}
+    _run(tmp_path, b, state={"options": {"spreads": {"x": sp}}}, eq_pos=eq,
+         closes={"SPY": DOWN, "QQQ": DOWN})
+    assert b.option_orders[0][0] == alt
+
+
+def test_orphan_scan_failure_still_runs_closes_but_blocks_opens(tmp_path):
+    state = {"options": {"spreads": {"x": _open_spread(credit=2.40)}}}
+    b = OptBroker(positions=_legs_pos(), quotes=_close_quotes(1.15, 1.25, 0.0, 0.10))
+    b.get_orders = _raise(RuntimeError("Alpaca GET /v2/orders failed: HTTP 503"))
+    _, rows = _run(tmp_path, b, state=state)
+    assert len(b.spread_orders) == 1 and b.spread_orders[0][3].endswith("O2:x:close")
+    assert any(r["strategy"] == "OPT" and "scan failed" in r["note"] for r in rows)
+
+
+def test_broken_hedge_sell_is_reconciled_and_cleared(tmp_path):
+    exp = TODAY + timedelta(days=10)
+    h = occ("SPY", 95, exp)
+    state = {"options": {"hedges": {h: {"qty": 3, "cost_basis": 600.0,
+                                        "expiry": exp.isoformat(), "status": "open"}}}}
+    b = OptBroker(positions={h: Position(h, 2, 100, 2.0, 0.5, 0)},
+                  quotes={h: OptionQuote(h, 0.45, 0.55, NOW - timedelta(minutes=1))})
+    state, _ = _run(tmp_path, b, state=state, allowed=False)
+    e = state["options"]["hedges"][h]
+    assert e["status"] == "pending_close" and e["qty"] == 2 and e["close_order_id"] == "op1"
+    b2 = OptBroker(quotes={}, order_status={"op1": {
+        "status": "filled", "filled_qty": "2", "filled_avg_price": "0.45"}})
+    state, rows = _run(tmp_path, b2, state=state, allowed=False,
+                       now=NOW + timedelta(days=1))
+    assert h not in state["options"]["hedges"]
+    assert any(r["side"] == "close_fill" and r["strategy"] == "O1" for r in rows)
