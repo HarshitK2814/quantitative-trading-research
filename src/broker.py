@@ -380,6 +380,15 @@ class AlpacaPaperBroker:
         """Fetch one order by id, to check fill status after submission."""
         return self._request("GET", f"/v2/orders/{order_id}")
 
+    def get_order_by_client_id(self, client_order_id: str) -> dict[str, Any]:
+        """Fetch one order by its client_order_id (used after a lost response)."""
+        return self._request("GET", "/v2/orders:by_client_order_id",
+                             params={"client_order_id": client_order_id})
+
+    def cancel_order(self, order_id: str) -> None:
+        """Cancel one open order by id."""
+        self._request("DELETE", f"/v2/orders/{order_id}")
+
     def cancel_all_orders(self) -> None:
         """Cancel every open order. Used to clear stale state before a run."""
         self._request("DELETE", "/v2/orders")
@@ -552,21 +561,82 @@ class AlpacaPaperBroker:
             side, qty, symbol, position_intent,
         )
         payload = self._request("POST", "/v2/orders", json=body)
+        return _order_result(payload)
 
-        return OrderResult(
-            order_id=payload["id"],
-            client_order_id=payload["client_order_id"],
-            symbol=payload["symbol"],
-            side=payload["side"],
-            qty=float(payload["qty"]),
-            order_type=payload["type"],
-            time_in_force=payload["time_in_force"],
-            status=payload["status"],
-            submitted_at=payload["submitted_at"],
-            filled_qty=float(payload.get("filled_qty") or 0.0),
-            filled_avg_price=(
-                float(payload["filled_avg_price"])
-                if payload.get("filled_avg_price")
-                else None
-            ),
-        )
+    def submit_spread_order(
+        self,
+        legs: list[dict[str, str]],
+        qty: int,
+        limit_price: float,
+        client_order_id: str | None = None,
+        time_in_force: TimeInForce = "day",
+    ) -> OrderResult:
+        """Submit ONE multi-leg (``order_class: "mleg"``) limit order.
+
+        All legs fill together or not at all, so a spread can never be left
+        as a naked short. There is no fallback to single-leg orders.
+
+        Args:
+            legs: Each ``{"symbol", "side", "position_intent"}``; ratio 1:1.
+                Needs at least one buy and one sell leg.
+            qty: Number of spreads. Must be positive.
+            limit_price: Net price per share. Alpaca: positive = debit paid,
+                negative = credit received.
+            client_order_id: Idempotency key.
+            time_in_force: ``"day"`` by default.
+
+        Raises:
+            ValueError: On fewer than two legs, an incomplete leg, a spread
+                without both a buy and a sell leg, or non-positive qty.
+
+        """
+        if qty <= 0:
+            raise ValueError(f"qty must be positive (got {qty}).")
+        if len(legs) < 2:
+            raise ValueError("a spread order needs at least two legs.")
+        for leg in legs:
+            if not all(leg.get(k) for k in ("symbol", "side", "position_intent")):
+                raise ValueError(f"incomplete leg {leg!r}.")
+        if {leg["side"] for leg in legs} != {"buy", "sell"}:
+            raise ValueError("a spread needs both a buy and a sell leg.")
+
+        body: dict[str, Any] = {
+            "order_class": "mleg",
+            "qty": str(qty),
+            "type": "limit",
+            "limit_price": str(round(limit_price, 2)),
+            "time_in_force": time_in_force,
+            "legs": [
+                {"symbol": leg["symbol"], "side": leg["side"],
+                 "position_intent": leg["position_intent"], "ratio_qty": "1"}
+                for leg in legs
+            ],
+        }
+        if client_order_id:
+            body["client_order_id"] = client_order_id
+
+        logger.info("Submitting PAPER mleg order: %s x%s @ %s",
+                    [(lg["side"], lg["symbol"]) for lg in legs], qty, limit_price)
+        payload = self._request("POST", "/v2/orders", json=body)
+        return _order_result(payload)
+
+
+def _order_result(payload: dict[str, Any]) -> OrderResult:
+    """Build an OrderResult; mleg parents have an empty symbol and side."""
+    return OrderResult(
+        order_id=payload["id"],
+        client_order_id=payload.get("client_order_id", ""),
+        symbol=payload.get("symbol") or "",
+        side=payload.get("side") or "",
+        qty=float(payload.get("qty") or 0.0),
+        order_type=payload.get("type", ""),
+        time_in_force=payload.get("time_in_force", ""),
+        status=payload.get("status", ""),
+        submitted_at=payload.get("submitted_at", ""),
+        filled_qty=float(payload.get("filled_qty") or 0.0),
+        filled_avg_price=(
+            float(payload["filled_avg_price"])
+            if payload.get("filled_avg_price")
+            else None
+        ),
+    )
