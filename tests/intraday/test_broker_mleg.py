@@ -70,3 +70,11 @@ def test_parse_ts_handles_nanoseconds_and_missing():
     assert ts == datetime(2026, 11, 10, 16, 29, 59, 123456, tzinfo=UTC)
     assert broker_mod._parse_ts(None) is None
     assert broker_mod._parse_ts("junk") is None
+
+
+def test_get_orders_can_request_nested_mleg_legs():
+    sent = []
+    b = object.__new__(broker_mod.AlpacaPaperBroker)
+    b._request = lambda m, p, **kw: sent.append(kw) or []
+    b.get_orders(status="open", nested=True)
+    assert sent[0]["params"]["nested"] == "true"

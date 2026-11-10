@@ -276,11 +276,14 @@ class AlpacaPaperBroker:
         }
 
     def get_orders(
-        self, status: str = "all", limit: int = 100, after: date | None = None
+        self, status: str = "all", limit: int = 100, after: date | None = None,
+        nested: bool = False,
     ) -> list[dict[str, Any]]:
-        """List orders, most recent first."""
+        """List orders, most recent first. ``nested`` rolls mleg legs under the parent."""
         params: dict[str, Any] = {"status": status, "limit": limit,
                                   "direction": "desc"}
+        if nested:
+            params["nested"] = "true"
         if after is not None:
             params["after"] = after.isoformat()
         return self._request("GET", "/v2/orders", params=params) or []

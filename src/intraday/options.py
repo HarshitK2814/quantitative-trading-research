@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import dataclasses
 import math
+import re
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
@@ -35,7 +36,7 @@ STOP_MULT = 2.0
 QUOTE_MAX_AGE_MIN = 15
 
 _EPS = 1e-9
-_DONE = {"canceled", "expired", "rejected"}
+_DONE = {"canceled", "expired", "rejected", "done_for_day"}
 
 
 def _floor_cent(x: float) -> float:
@@ -237,7 +238,7 @@ def reconcile_spread(entry: dict, order: dict | None) -> dict | None:
             e["status"] = "open"
             e["contracts"] = n or e["contracts"]
             price = _filled_price(order)
-            if price is not None and status == "filled":
+            if price is not None:
                 e["credit"] = price
             e["max_loss"] = spread_max_loss(e["width"], e["credit"], e["contracts"])
             return e
@@ -284,6 +285,130 @@ def reconcile_hedge(entry: dict, order: dict | None) -> dict | None:
 
 
 def legs_held(spread: dict, positions: dict[str, Position]) -> bool:
-    """Both legs present with the right sign: short < 0, long > 0."""
+    """Both legs held at exactly the spread size: short = -contracts, long = +contracts."""
     s, lg = positions.get(spread["short"]), positions.get(spread["long"])
-    return bool(s and lg and s.qty < 0 and lg.qty > 0)
+    n = int(spread["contracts"])
+    return bool(s and lg and int(round(s.qty)) == -n and int(round(lg.qty)) == n)
+
+
+def naked_short_qty(spread: dict, positions: dict[str, Position]) -> int:
+    """Short contracts held with no matching long leg (must be bought back)."""
+    s, lg = positions.get(spread["short"]), positions.get(spread["long"])
+    if not s or s.qty >= 0:
+        return 0
+    covered = max(int(round(lg.qty)), 0) if lg else 0
+    return max(int(round(-s.qty)) - covered, 0)
+
+
+# -- submit errors and unknown outcomes -------------------------------------------
+
+def classify_submit_error(exc: BaseException) -> str:
+    """"rejected" only when the order surely was not placed (HTTP 4xx or local
+    validation); anything else (5xx, timeout, network) is "unknown"."""
+    if isinstance(exc, ValueError):
+        return "rejected"
+    m = re.search(r"HTTP (\d{3})", str(exc))
+    if isinstance(exc, RuntimeError) and m and 400 <= int(m.group(1)) < 500:
+        return "rejected"
+    return "unknown"
+
+
+def resolve_unknown(entry: dict, order: dict | None, reconcile) -> dict | None:
+    """Turn an "unknown" entry back into its pending state using the order
+    found by client id, then reconcile it. None order = still unknown."""
+    if order is None:
+        return entry
+    e = {k: v for k, v in entry.items() if k != "unknown_of"}
+    e["status"] = entry["unknown_of"]
+    id_key = "close_order_id" if e["status"] == "pending_close" else "order_id"
+    if order.get("id"):
+        e[id_key] = order["id"]
+    return reconcile(e, order)
+
+
+# -- orphans (broker holds O1/O2-like things the state does not know) -------------
+
+_OCC_PUT = re.compile(r"^(SPY|QQQ)\d{6}P\d{8}$")
+
+
+def _known(opts: dict) -> tuple[set[str], set[str]]:
+    syms, ids = set(), set()
+    for s in opts.get("spreads", {}).values():
+        syms.update(x for x in (s.get("short"), s.get("long")) if x)
+        ids.update(v for k, v in s.items() if k.endswith("order_id") and v)
+    for hid, h in opts.get("hedges", {}).items():
+        syms.add(hid)
+        ids.update(v for k, v in h.items() if k.endswith("order_id") and v)
+    return syms, ids
+
+
+def find_orphans(opts: dict, positions: dict[str, Position],
+                 open_orders: list[dict]) -> list[str]:
+    """SPY/QQQ put positions or open orders (by symbol or O1/O2 client id)
+    that state does not track. Any hit means state may be out of sync."""
+    syms, ids = _known(opts)
+    out = [f"position {s}" for s in positions if _OCC_PUT.match(s) and s not in syms]
+    for od in open_orders:
+        if od.get("id") in ids or od.get("client_order_id") in ids:
+            continue
+        coid = od.get("client_order_id") or ""
+        legs = [lg.get("symbol", "") for lg in (od.get("legs") or [])]
+        if ":O1:" in coid or ":O2:" in coid or any(
+                _OCC_PUT.match(x or "") and x not in syms
+                for x in [od.get("symbol", "")] + legs):
+            out.append(f"order {od.get('id')} ({coid})")
+    return out
+
+
+# -- reconcile log rows -------------------------------------------------------------
+
+def _pnl(kind: str, before: dict, price: float | None, n: int) -> float | None:
+    if price is None or n <= 0:
+        return None
+    if kind == "spread":
+        return round((float(before["credit"]) - price) * 100.0 * n, 2)
+    per_share_cost = float(before["cost_basis"]) / (100.0 * before["qty"])
+    return round((price - per_share_cost) * 100.0 * n, 2)
+
+
+def describe_reconcile(kind: str, before: dict, after: dict | None,
+                       order: dict | None) -> dict | None:
+    """Log row (side, qty, price, note) for what a reconcile changed, or None."""
+    if order is None:
+        return None
+    status, price = order.get("status"), _filled_price(order)
+    size = "contracts" if kind == "spread" else "qty"
+    total = int(before[size])
+    if before["status"] == "pending_open":
+        if after is None:
+            return {"side": "unfilled", "qty": 0, "price": 0.0,
+                    "note": f"open not filled ({status}); no position"}
+        if after["status"] == "open":
+            n = int(after[size])
+            if kind == "spread":
+                note = (f"open filled {n}/{total} credit={after['credit']:.2f} "
+                        f"max_loss={after['max_loss']:.0f}")
+            else:
+                note = (f"open filled {n}/{total} debit={price if price is not None else 'n/a'} "
+                        f"cost={float(after['cost_basis']):.0f}")
+            if status != "filled":
+                note = f"partial {note}; rest {status}"
+            return {"side": "fill", "qty": n, "price": price or 0.0, "note": note}
+    elif before["status"] == "pending_close":
+        closed = total if after is None else total - int(after[size])
+        if closed > 0:
+            pnl = _pnl(kind, before, price, closed)
+            pnl_s = "n/a" if pnl is None else f"{pnl:.2f}"
+            note = (f"close filled {closed}/{total} price={price if price is not None else 'n/a'} "
+                    f"realised_pnl={pnl_s}")
+            if after is not None:
+                note = f"partial {note}; rest {status}, still open"
+            return {"side": "close_fill", "qty": closed, "price": price or 0.0, "note": note}
+        if after is not None and after["status"] == "open":
+            return {"side": "unfilled", "qty": 0, "price": 0.0,
+                    "note": f"close not filled ({status}); still open"}
+    if status == "partially_filled":
+        return {"side": "partial", "qty": int(float(order.get("filled_qty") or 0)),
+                "price": price or 0.0,
+                "note": f"partially filled {order.get('filled_qty')}/{total}, still working"}
+    return None

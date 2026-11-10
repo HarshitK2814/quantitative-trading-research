@@ -256,3 +256,118 @@ def test_legs_held_checks_both_signs():
     assert o.legs_held(sp, pos)
     assert not o.legs_held(sp, {"S": pos["S"]})
     assert not o.legs_held(sp, {"S": pos["L"], "L": pos["L"]})
+
+
+# -- review fixes: submit errors, broken legs, orphans, reconcile rows ----------
+
+def test_classify_submit_error_only_4xx_means_not_placed():
+    import requests
+    assert o.classify_submit_error(RuntimeError("Alpaca POST failed: HTTP 422 x")) == "rejected"
+    assert o.classify_submit_error(RuntimeError("Alpaca POST failed: HTTP 403 x")) == "rejected"
+    assert o.classify_submit_error(ValueError("needs two legs")) == "rejected"
+    assert o.classify_submit_error(RuntimeError("Alpaca POST failed: HTTP 503 x")) == "unknown"
+    assert o.classify_submit_error(requests.Timeout("slow")) == "unknown"
+    assert o.classify_submit_error(RuntimeError("boom")) == "unknown"
+
+
+def test_resolve_unknown_uses_found_order():
+    e = {"status": "unknown", "unknown_of": "pending_open", "contracts": 2,
+         "credit": 1.2, "width": 5.0, "max_loss": 760.0, "order_id": ""}
+    out = o.resolve_unknown(e, {"id": "z", "status": "new"}, o.reconcile_spread)
+    assert out["status"] == "pending_open" and out["order_id"] == "z"
+    assert "unknown_of" not in out
+    assert o.resolve_unknown(e, {"status": "rejected", "filled_qty": "0"},
+                             o.reconcile_spread) is None
+    assert o.resolve_unknown(e, None, o.reconcile_spread) == e
+
+
+def test_done_for_day_is_terminal():
+    e = {"status": "pending_open", "contracts": 1, "credit": 1.2, "width": 5.0,
+         "max_loss": 380.0}
+    assert o.reconcile_spread(e, {"status": "done_for_day", "filled_qty": "0"}) is None
+
+
+def test_legs_held_requires_qty_equal_contracts():
+    sp = {"short": "S", "long": "L", "contracts": 2}
+    pos = {"S": Position("S", -2, -1, 1, 1, 0), "L": Position("L", 1, 1, 1, 1, 0)}
+    assert not o.legs_held(sp, pos)
+    pos["L"] = Position("L", 2, 1, 1, 1, 0)
+    assert o.legs_held(sp, pos)
+
+
+def test_naked_short_qty():
+    sp = {"short": "S", "long": "L", "contracts": 2}
+    s2 = Position("S", -2, -1, 1, 1, 0)
+    assert o.naked_short_qty(sp, {"S": s2}) == 2
+    assert o.naked_short_qty(sp, {"S": s2, "L": Position("L", 1, 1, 1, 1, 0)}) == 1
+    assert o.naked_short_qty(sp, {"L": Position("L", 2, 1, 1, 1, 0)}) == 0
+    assert o.naked_short_qty(sp, {}) == 0
+
+
+def test_find_orphans_positions_and_orders():
+    tracked = put(95).symbol
+    opts = {"spreads": {"a": {"short": tracked, "long": put(90).symbol,
+                              "client_order_id": "d:late_morning:O2:SPY:open",
+                              "order_id": "o1"}}}
+    pos = {tracked: Position(tracked, -1, 0, 0, 0, 0),
+           "AAPL": Position("AAPL", 5, 0, 0, 0, 0)}
+    assert o.find_orphans(opts, pos, []) == []
+    stray = put(80, und="QQQ").symbol
+    assert o.find_orphans(opts, {**pos, stray: Position(stray, 1, 0, 0, 0, 0)}, [])
+    calls = "SPY261218C00700000"
+    assert o.find_orphans(opts, {calls: Position(calls, 1, 0, 0, 0, 0)}, []) == []
+    known = {"id": "o1", "client_order_id": "d:late_morning:O2:SPY:open", "symbol": ""}
+    assert o.find_orphans(opts, pos, [known]) == []
+    assert o.find_orphans(opts, pos, [{"id": "x", "client_order_id": "e:late_morning:O1:Z:open",
+                                       "symbol": "Z"}])
+    leg_order = {"id": "y", "client_order_id": "manual", "symbol": "",
+                 "legs": [{"symbol": stray}]}
+    assert o.find_orphans(opts, pos, [leg_order])
+
+
+def _sp(**kw):
+    return {"short": "S", "long": "L", "width": 5.0, "credit": 1.2, "contracts": 2,
+            "max_loss": 760.0, "expiry": EXP.isoformat(), **kw}
+
+
+def test_describe_reconcile_open_fill_unfilled_and_partial():
+    before = _sp(status="pending_open")
+    order = {"status": "filled", "filled_qty": "2", "filled_avg_price": "-1.25"}
+    ev = o.describe_reconcile("spread", before, o.reconcile_spread(before, order), order)
+    assert ev["side"] == "fill" and "credit=1.25" in ev["note"]
+    order = {"status": "expired", "filled_qty": "0"}
+    ev = o.describe_reconcile("spread", before, o.reconcile_spread(before, order), order)
+    assert ev["side"] == "unfilled" and "not filled" in ev["note"]
+    order = {"status": "canceled", "filled_qty": "1", "filled_avg_price": "-1.3"}
+    ev = o.describe_reconcile("spread", before, o.reconcile_spread(before, order), order)
+    assert ev["side"] == "fill" and "partial" in ev["note"] and ev["qty"] == 1
+    assert o.describe_reconcile("spread", before, before, {"status": "new"}) is None
+
+
+def test_describe_reconcile_close_fill_realised_pnl_and_partial():
+    before = _sp(status="pending_close")
+    order = {"status": "filled", "filled_qty": "2", "filled_avg_price": "0.60"}
+    ev = o.describe_reconcile("spread", before, o.reconcile_spread(before, order), order)
+    assert ev["side"] == "close_fill" and "realised_pnl=120.00" in ev["note"]   # (1.2-.6)*100*2
+    order = {"status": "expired", "filled_qty": "1", "filled_avg_price": "0.70"}
+    after = o.reconcile_spread(before, order)
+    assert after["contracts"] == 1 and after["max_loss"] == 380.0
+    ev = o.describe_reconcile("spread", before, after, order)
+    assert ev["qty"] == 1 and "realised_pnl=50.00" in ev["note"] and "1/2" in ev["note"]
+    order = {"status": "expired", "filled_qty": "0"}
+    ev = o.describe_reconcile("spread", before, o.reconcile_spread(before, order), order)
+    assert ev["side"] == "unfilled" and "still open" in ev["note"]
+
+
+def test_describe_reconcile_hedge_close_pnl():
+    before = {"status": "pending_close", "qty": 2, "cost_basis": 400.0}
+    order = {"status": "filled", "filled_qty": "2", "filled_avg_price": "0.50"}
+    ev = o.describe_reconcile("hedge", before, o.reconcile_hedge(before, order), order)
+    assert "realised_pnl=-300.00" in ev["note"]                                # 100 - 400
+
+
+def test_find_orphans_ignores_unnested_leg_order_on_tracked_symbol():
+    tracked = put(95).symbol
+    opts = {"spreads": {"a": {"short": tracked, "long": put(90).symbol}}}
+    leg = {"id": "leg1", "client_order_id": "auto-leg", "symbol": tracked}
+    assert o.find_orphans(opts, {}, [leg]) == []
