@@ -58,6 +58,21 @@ _TIMEOUT = 30
 _GET_ATTEMPTS = 4  # read-only requests only; order POSTs are never retried
 
 
+def _parse_ts(raw: str | None) -> datetime | None:
+    """Parse an Alpaca RFC 3339 time (may carry nanoseconds); None if unusable."""
+    if not raw:
+        return None
+    try:
+        s = raw.replace("Z", "+00:00")
+        if "." in s:
+            head, rest = s.split(".", 1)
+            i = next((k for k, ch in enumerate(rest) if ch in "+-"), len(rest))
+            s = f"{head}.{rest[:i][:6]}{rest[i:]}"
+        return datetime.fromisoformat(s)
+    except ValueError:
+        return None
+
+
 @dataclass(frozen=True)
 class Position:
     """A single open position."""
@@ -108,6 +123,9 @@ class OptionQuote:
     symbol: str
     bid: float
     ask: float
+    #: Quote time (UTC). ``None`` when the feed gave none; callers that need
+    #: a fresh quote must treat ``None`` as stale.
+    timestamp: datetime | None = None
 
     @property
     def mid(self) -> float:
@@ -442,7 +460,8 @@ class AlpacaPaperBroker:
         response.raise_for_status()
         quotes = response.json().get("quotes", {})
         return {
-            sym: OptionQuote(symbol=sym, bid=float(row["bp"]), ask=float(row["ap"]))
+            sym: OptionQuote(symbol=sym, bid=float(row["bp"]), ask=float(row["ap"]),
+                             timestamp=_parse_ts(row.get("t")))
             for sym, row in quotes.items()
             if "bp" in row and "ap" in row
         }
