@@ -371,3 +371,23 @@ def test_find_orphans_ignores_unnested_leg_order_on_tracked_symbol():
     opts = {"spreads": {"a": {"short": tracked, "long": put(90).symbol}}}
     leg = {"id": "leg1", "client_order_id": "auto-leg", "symbol": tracked}
     assert o.find_orphans(opts, {}, [leg]) == []
+
+
+def test_select_spread_never_reuses_tracked_symbols():
+    cs = [put(k) for k in (89, 90, 94, 95)]
+    quotes = {c.symbol: q(c.symbol, 2.0, 2.1) for c in cs}
+    quotes[cs[0].symbol] = q(cs[0].symbol, 0.7, 0.8)
+    quotes[cs[1].symbol] = q(cs[1].symbol, 0.8, 0.9)
+    plan, _ = o.select_spread(cs, quotes, 100.0, TODAY, NOW,
+                              exclude={put(95).symbol, put(90).symbol})
+    assert (plan.short_strike, plan.long_strike) == (94.0, 89.0)
+    plan, why = o.select_spread(cs, quotes, 100.0, TODAY, NOW,
+                                exclude={put(95).symbol, put(89).symbol})
+    assert plan is None and "tracked" in why
+
+
+def test_tracked_symbols_cover_all_entries_and_statuses():
+    opts = {"spreads": {"a": {"short": "S1", "long": "L1", "status": "unknown"},
+                        "b": {"short": "S2", "long": "L2", "status": "broken"}},
+            "hedges": {"H": {"status": "pending_open"}}}
+    assert o.tracked_symbols(opts) == {"S1", "L1", "S2", "L2", "H"}

@@ -25,6 +25,7 @@ SPREAD_UNDERLYINGS = ("SPY", "QQQ")
 HEDGE_UNDERLYING = "SPY"
 SHORT_OTM = 0.05
 SHORT_OTM_TOL = 0.01   # short strike must sit 4-6% below spot
+HEDGE_OTM = 0.05       # same as src/hedge.py TARGET_OTM_FRACTION
 SPREAD_WIDTH = 5.0
 SPREAD_MIN_DTE = 30
 SPREAD_MAX_DTE = 45
@@ -114,9 +115,13 @@ class SpreadPlan:
 
 def select_spread(
     contracts: list[OptionContract], quotes: dict[str, OptionQuote],
-    spot: float, as_of: date, now: datetime,
+    spot: float, as_of: date, now: datetime, exclude: frozenset | set = frozenset(),
 ) -> tuple[SpreadPlan | None, str]:
-    """Pick the spread per the fixed rule, or (None, reason)."""
+    """Pick the spread per the fixed rule, or (None, reason).
+
+    `exclude` holds contract symbols already tracked by any O1/O2 entry; a new
+    spread never reuses one in either leg (shared legs would break leg checks).
+    """
     if spot <= 0:
         return None, "no spot price"
     lo, hi = as_of + timedelta(days=SPREAD_MIN_DTE), as_of + timedelta(days=SPREAD_MAX_DTE)
@@ -131,6 +136,10 @@ def select_spread(
              and abs(k - target) <= SHORT_OTM_TOL * spot + _EPS]
     if not pairs:
         return None, "no strike pair $5 apart with short 4-6% below spot"
+    pairs = [k for k in pairs if chain[k].symbol not in exclude
+             and chain[k - SPREAD_WIDTH].symbol not in exclude]
+    if not pairs:
+        return None, "every eligible strike pair uses an already tracked contract"
     short_k = min(pairs, key=lambda k: abs(k - target))
     long_k = short_k - SPREAD_WIDTH
     short_c, long_c = chain[short_k], chain[long_k]
@@ -324,6 +333,26 @@ def resolve_unknown(entry: dict, order: dict | None, reconcile) -> dict | None:
     if order.get("id"):
         e[id_key] = order["id"]
     return reconcile(e, order)
+
+
+# -- tracked contracts and orphans --------------------------------------------------
+
+def tracked_symbols(opts: dict) -> set[str]:
+    """Every option symbol any O1/O2 entry uses, whatever its status."""
+    return _known(opts)[0]
+
+
+def hedge_candidates(contracts: list[OptionContract], spot: float,
+                     exclude: set[str]) -> tuple[list[OptionContract], str]:
+    """Contracts at the rule's nearest strike (any expiry in the window) that are
+    not already tracked. Never drifts to another strike."""
+    if not contracts or spot <= 0:
+        return [], "no contracts"
+    target = spot * (1 - HEDGE_OTM)
+    best = min(abs(c.strike_price - target) for c in contracts)
+    keep = [c for c in contracts if abs(abs(c.strike_price - target) - best) <= _EPS
+            and c.symbol not in exclude]
+    return keep, ("ok" if keep else "nearest-strike hedge contract already tracked")
 
 
 # -- orphans (broker holds O1/O2-like things the state does not know) -------------
