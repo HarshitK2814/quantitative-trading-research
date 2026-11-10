@@ -3,8 +3,13 @@
 from __future__ import annotations
 
 import json
+import logging
+import os
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -24,18 +29,35 @@ def _default_state() -> dict:
 
 
 def load_state(path: Path) -> dict:
-    """Load state, or return a fresh default if the file does not exist."""
+    """Load state; fresh default if no file. Corrupt file fails closed (killed=True)."""
     path = Path(path)
-    if path.exists():
-        return {**_default_state(), **json.loads(path.read_text())}
-    return _default_state()
+    if not path.exists():
+        return _default_state()
+    try:
+        data = json.loads(path.read_text())
+        if not isinstance(data, dict):
+            raise ValueError("state is not a JSON object")
+        return {**_default_state(), **data}
+    except (ValueError, OSError) as exc:
+        logger.warning("state file %s unreadable (%s); failing closed: buys blocked", path, exc)
+        return {**_default_state(), "killed": True}
 
 
 def save_state(path: Path, state: dict) -> None:
-    """Write state as JSON, creating parent folders."""
+    """Write state atomically (temp file in same folder, then os.replace)."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(state, indent=2))
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=path.name + ".", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as fh:
+            fh.write(json.dumps(state, indent=2))
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+        raise
 
 
 def update_state(state: dict, equity: float, today: str, limits: SessionLimits) -> dict:

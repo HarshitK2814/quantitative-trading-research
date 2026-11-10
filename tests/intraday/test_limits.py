@@ -61,3 +61,19 @@ def test_state_roundtrip(tmp_path):
 def load_state_default():
     return {"peak_equity": 0.0, "day": "", "day_start_equity": 0.0,
             "killed": False, "ran": []}
+
+
+def test_corrupt_state_fails_closed(tmp_path):
+    p = tmp_path / "s.json"
+    p.write_text('{"peak_equity": 100000, "day": "2026-1')   # truncated
+    s = load_state(p)
+    assert s["killed"] is True
+    assert buys_allowed(s, 100_000, L)[0] is False
+
+
+def test_save_state_is_atomic_and_leaves_no_tmp(tmp_path):
+    p = tmp_path / "sub" / "s.json"
+    save_state(p, {"killed": False})
+    save_state(p, {"killed": True})
+    assert load_state(p)["killed"] is True
+    assert [f.name for f in p.parent.iterdir()] == ["s.json"]
