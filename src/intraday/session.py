@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import csv
 import logging
 from datetime import datetime
@@ -47,18 +48,25 @@ def run_session(
     """Run one session and return the log rows. Only registry symbols are touched."""
     today_et = now_utc.astimezone(ET).date()
     acct = broker.get_account()
-    state = update_state(load_state(state_path), acct.equity, today_et.isoformat(), limits)
+    state = update_state(copy.deepcopy(load_state(state_path)), acct.equity,
+                         today_et.isoformat(), limits)
     key = f"{today_et.isoformat()}:{name}"
     if key in state["ran"]:
-        save_state(state_path, state)
+        if not dry_run:
+            save_state(state_path, state)
         return []
-    state["ran"].append(key)
+    if not dry_run:
+        state["ran"].append(key)
 
     closes = {s: completed_bars(c, today_et) for s, c in closes.items()}
     owner = {s: spec.id for spec in registry.values() if spec.active for s in spec.symbols}
     classes = {s: spec.asset_class for spec in registry.values() if spec.active
                for s in spec.symbols}
-    weights = cap_weights(target_weights(registry, closes), classes, limits)
+    raw = target_weights(registry, closes)
+    stopped = state.setdefault("stopped", {})
+    for sym in [s for s in stopped if raw.get(s, 0.0) == 0.0]:
+        del stopped[sym]
+    weights = cap_weights(raw, classes, limits)
 
     positions = {_norm(s): p for s, p in broker.get_positions().items()}
     notes: dict[str, str] = {}
@@ -68,6 +76,7 @@ def run_session(
                 pos.current_price <= pos.avg_entry_price * (1 - RISK.stop_loss_pct):
             weights[sym] = 0.0
             notes[sym] = "stop-loss"
+            stopped[sym] = today_et.isoformat()
 
     allowed, why = buys_allowed(state, acct.equity, limits)
     market_open = broker.is_market_open()
@@ -79,8 +88,12 @@ def run_session(
                "news_action": getattr(verdict, "action", ""),
                "news_reason": getattr(verdict, "reason", ""),
                "note": note, "dry_run": dry_run, "order_id": order_id}
-        _append(log_path, row)
+        if not dry_run:
+            _append(log_path, row)
         rows.append(row)
+
+    if not dry_run:
+        save_state(state_path, state)  # session key persisted before any order
 
     for sym, w in weights.items():
         is_crypto = classes[sym] == "crypto"
@@ -88,6 +101,9 @@ def run_session(
             continue
         price = prices.get(sym)
         if not price:
+            continue
+        if sym in stopped and w > 0:
+            log(sym, "skip", 0, price, note="stopped out, waiting for signal reset")
             continue
         pos = positions.get(_norm(sym))
         held_val = pos.market_value if pos else 0.0
@@ -118,9 +134,11 @@ def run_session(
         order_id = ""
         if not dry_run:
             res = broker.submit_order(sym, qty, side,
-                                      time_in_force="gtc" if is_crypto else "day")
+                                      time_in_force="gtc" if is_crypto else "day",
+                                      client_order_id=f"{key}:{_norm(sym)}:{side}")
             order_id = res.order_id
         log(sym, side, qty, price, verdict, notes.get(sym, ""), order_id)
 
-    save_state(state_path, state)
+    if not dry_run:
+        save_state(state_path, state)
     return rows
