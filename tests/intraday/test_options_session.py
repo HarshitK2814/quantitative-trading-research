@@ -40,10 +40,14 @@ def chain_quotes(age_min=1):
 
 class OptBroker:
     def __init__(self, quotes=None, positions=None, reject_mleg=False,
-                 state_path=None, order_status=None):
+                 state_path=None, order_status=None, mleg_error=None,
+                 by_client=None, open_orders=None):
         self.quotes = chain_quotes() if quotes is None else quotes
         self.positions = positions or {}
         self.reject_mleg = reject_mleg
+        self.mleg_error = mleg_error
+        self.by_client = by_client or {}
+        self.open_orders = open_orders or []
         self.state_path = state_path
         self.order_status = order_status or {}
         self.spread_orders, self.option_orders, self.state_at_submit = [], [], []
@@ -70,6 +74,8 @@ class OptBroker:
         self._snap()
         if self.reject_mleg:
             raise RuntimeError("Alpaca POST /v2/orders failed: HTTP 422 mleg")
+        if self.mleg_error:
+            raise self.mleg_error
         self.spread_orders.append((legs, qty, limit_price, client_order_id))
         return SimpleNamespace(order_id=f"sp{len(self.spread_orders)}")
 
@@ -85,11 +91,17 @@ class OptBroker:
         return self.order_status.get(oid, {"status": "new"})
 
     def get_order_by_client_id(self, coid):
+        if coid in self.by_client:
+            return self.by_client[coid]
         raise RuntimeError("Alpaca GET failed: HTTP 404 not found")
+
+    def get_orders(self, status="all", limit=100, after=None, nested=False):
+        return self.open_orders
 
 
 def _run(tmp_path, broker, *, state=None, allowed=True, session="late_morning",
-         action="ok", closes=None, eq_pos=None, dry_run=False, market_open=True):
+         action="ok", closes=None, eq_pos=None, dry_run=False, market_open=True,
+         now=NOW):
     state = {"options": {}} if state is None else state
     rows = []
 
@@ -99,10 +111,11 @@ def _run(tmp_path, broker, *, state=None, allowed=True, session="late_morning",
                      "news": getattr(verdict, "action", "")})
 
     run_options(
-        key=f"2026-11-10:{session}", session=session, broker=broker, state=state,
+        key=f"{now.date().isoformat()}:{session}", session=session, broker=broker,
+        state=state,
         equity=100_000.0, closes=closes or {"SPY": UP, "QQQ": UP},
         registry=REGISTRY, gate=lambda s: Verdict(action, "r"),
-        prices={"SPY": 100.0, "QQQ": 100.0}, now_utc=NOW, allowed=allowed,
+        prices={"SPY": 100.0, "QQQ": 100.0}, now_utc=now, allowed=allowed,
         why="ok" if allowed else "kill switch active", market_open=market_open,
         dry_run=dry_run, state_path=tmp_path / "s.json",
         equity_positions=eq_pos or {}, emit=emit,
@@ -371,3 +384,183 @@ def test_old_state_file_without_options_key_loads(tmp_path):
                              "stopped": {}}))
     s = load_state(p)
     assert s["options"] == {} and s["killed"] is False
+
+
+# -- review fixes ---------------------------------------------------------------
+
+def _raise(exc):
+    def f(*a, **k):
+        raise exc
+    return f
+
+
+def test_5xx_on_submit_keeps_entry_unknown_then_reconciles_by_client_id(tmp_path):
+    b = OptBroker(mleg_error=RuntimeError("Alpaca POST /v2/orders failed: HTTP 503 x"),
+                  state_path=tmp_path / "s.json")
+    state, rows = _run(tmp_path, b)
+    sp = state["options"]["spreads"]["2026-11-10:SPY"]
+    assert sp["status"] == "unknown" and sp["unknown_of"] == "pending_open"
+    saved = load_state(tmp_path / "s.json")["options"]["spreads"]["2026-11-10:SPY"]
+    assert saved["status"] == "unknown"
+    assert any("unknown" in r["note"] for r in rows) and b.option_orders == []
+    coid = "2026-11-10:late_morning:O2:SPY:open"
+    b2 = OptBroker(quotes={}, by_client={coid: {
+        "id": "real", "status": "filled", "filled_qty": "2", "filled_avg_price": "-1.2"}})
+    b2.positions = {occ("SPY", 95): Position(occ("SPY", 95), -2, 0, 0, 0, 0),
+                    occ("SPY", 90): Position(occ("SPY", 90), 2, 0, 0, 0, 0)}
+    state, rows = _run(tmp_path, b2, state=state, now=NOW + timedelta(days=1))
+    sp = state["options"]["spreads"]["2026-11-10:SPY"]
+    assert sp["status"] == "open" and sp["order_id"] == "real"
+    assert any(r["side"] == "fill" and r["strategy"] == "O2" for r in rows)
+
+
+def test_unknown_not_found_by_client_id_is_dropped_with_row(tmp_path):
+    b = OptBroker(mleg_error=RuntimeError("timeout"))
+    state, _ = _run(tmp_path, b)
+    assert state["options"]["spreads"]["2026-11-10:SPY"]["status"] == "unknown"
+    b2 = OptBroker(quotes={})
+    state, rows = _run(tmp_path, b2, state=state, now=NOW + timedelta(days=1))
+    assert "2026-11-10:SPY" not in state["options"]["spreads"]
+    assert any(r["side"] == "unfilled" for r in rows)
+
+
+def test_unknown_entry_stays_and_counts_toward_risk_when_lookup_fails(tmp_path):
+    state = {"options": {"spreads": {"u": {**_open_spread(), "status": "unknown",
+                                           "unknown_of": "pending_open",
+                                           "max_loss": 1000.0, "order_id": "",
+                                           "client_order_id": "c"}}}}
+    b = OptBroker(positions=_legs_pos())
+    b.get_order_by_client_id = _raise(OSError("net down"))
+    state, _ = _run(tmp_path, b, state=state)
+    assert state["options"]["spreads"]["u"]["status"] == "unknown"
+    assert b.spread_orders == []                    # spread bucket full
+
+
+def test_one_leg_missing_marks_broken_buys_back_short_and_blocks_opens(tmp_path):
+    state = {"options": {"spreads": {"x": _open_spread()}}}
+    s = occ("SPY", 95)
+    b = OptBroker(positions={s: Position(s, -1, -200, 2.4, 2.0, 0)})
+    state, rows = _run(tmp_path, b, state=state)
+    assert state["options"]["spreads"]["x"]["status"] == "broken"
+    assert b.option_orders and b.option_orders[0][:5] == (s, 1, "buy", "buy_to_close",
+                                                          "limit")
+    assert b.option_orders[0][5] == 2.10                    # short ask
+    assert b.spread_orders == []                            # no new opens
+    assert any("BROKEN" in r["note"] for r in rows)
+    assert any("blocked" in r["note"].lower() for r in rows)
+
+
+def test_both_legs_missing_stays_broken_and_blocks_opens(tmp_path):
+    state = {"options": {"spreads": {"x": _open_spread()}}}
+    b = OptBroker()
+    state, _ = _run(tmp_path, b, state=state)
+    assert state["options"]["spreads"]["x"]["status"] == "broken"
+    assert b.spread_orders == [] and b.option_orders == []
+
+
+def test_qty_mismatch_is_broken_and_buys_back_only_naked_part(tmp_path):
+    sp = {**_open_spread(), "contracts": 2}
+    s, lg = sp["short"], sp["long"]
+    b = OptBroker(positions={s: Position(s, -2, 0, 0, 0, 0),
+                             lg: Position(lg, 1, 0, 0, 0, 0)})
+    state, _ = _run(tmp_path, b, state={"options": {"spreads": {"x": sp}}})
+    assert state["options"]["spreads"]["x"]["status"] == "broken"
+    assert b.option_orders[0][:4] == (s, 1, "buy", "buy_to_close")
+
+
+def test_untracked_spy_put_position_blocks_opens(tmp_path):
+    stray = occ("SPY", 72)
+    b = OptBroker(positions={stray: Position(stray, 2, 300, 1.5, 1.5, 0)})
+    _, rows = _run(tmp_path, b)
+    assert b.spread_orders == [] and b.option_orders == []
+    assert any("out of sync" in r["note"] for r in rows)
+
+
+def test_untracked_o2_open_order_blocks_opens(tmp_path):
+    b = OptBroker(open_orders=[{"id": "q", "symbol": "", "legs": [],
+                                "client_order_id": "2026-11-09:late_morning:O2:SPY:open"}])
+    _run(tmp_path, b)
+    assert b.spread_orders == []
+
+
+def test_missing_state_file_with_broker_o2_positions_blocks_opens(tmp_path):
+    state = load_state(tmp_path / "nope.json")
+    b = OptBroker(positions=_legs_pos())
+    _, rows = _run(tmp_path, b, state=state)
+    assert b.spread_orders == [] and b.option_orders == []
+    assert any("out of sync" in r["note"] for r in rows)
+
+
+def test_reconcile_rows_for_fill_and_unfilled(tmp_path):
+    a = {**_open_spread(), "status": "pending_open", "order_id": "f"}
+    c = {**_open_spread(und="QQQ"), "status": "pending_open", "order_id": "e"}
+    b = OptBroker(quotes={}, positions=_legs_pos(), order_status={
+        "f": {"status": "filled", "filled_qty": "1", "filled_avg_price": "-2.4"},
+        "e": {"status": "expired", "filled_qty": "0"}})
+    state, rows = _run(tmp_path, b, state={"options": {"spreads": {"a": a, "c": c}}})
+    assert state["options"]["spreads"]["a"]["status"] == "open"
+    assert "c" not in state["options"]["spreads"]
+    fill = [r for r in rows if r["side"] == "fill"]
+    unf = [r for r in rows if r["side"] == "unfilled"]
+    assert fill and fill[0]["strategy"] == "O2" and "credit=2.40" in fill[0]["note"]
+    assert unf and "not filled" in unf[0]["note"] and occ("QQQ", 95) in unf[0]["symbol"]
+
+
+def test_partial_close_reconcile_row_and_remaining_contracts(tmp_path):
+    sp = {**_open_spread(), "contracts": 2, "status": "pending_close",
+          "close_order_id": "c1"}
+    b = OptBroker(quotes={}, order_status={"c1": {
+        "status": "expired", "filled_qty": "1", "filled_avg_price": "1.40"}},
+        positions={occ("SPY", 95): Position(occ("SPY", 95), -1, 0, 0, 0, 0),
+                   occ("SPY", 90): Position(occ("SPY", 90), 1, 0, 0, 0, 0)})
+    state, rows = _run(tmp_path, b, state={"options": {"spreads": {"x": sp}}},
+                       allowed=False)
+    assert state["options"]["spreads"]["x"]["contracts"] == 1
+    assert state["options"]["spreads"]["x"]["status"] == "open"
+    row = [r for r in rows if r["side"] == "close_fill"][0]
+    assert "realised_pnl=100.00" in row["note"] and row["qty"] == 1     # (2.4-1.4)*100
+
+
+def test_market_closed_and_no_new_rows_use_neutral_tag(tmp_path):
+    _, rows = _run(tmp_path, OptBroker(), market_open=False)
+    assert rows[0]["strategy"] == "OPT"
+    _, rows = _run(tmp_path / "2", OptBroker(), allowed=False)
+    assert any(r["strategy"] == "OPT" and "no new options" in r["note"] for r in rows)
+
+
+def test_hedge_sell_capped_at_held_qty_and_marked_broken(tmp_path):
+    exp = TODAY + timedelta(days=10)
+    h = occ("SPY", 95, exp)
+    state = {"options": {"hedges": {h: {"qty": 3, "cost_basis": 600.0,
+                                        "expiry": exp.isoformat(), "status": "open"}}}}
+    b = OptBroker(positions={h: Position(h, 2, 100, 2.0, 0.5, 0)},
+                  quotes={h: OptionQuote(h, 0.45, 0.55, NOW - timedelta(minutes=1))})
+    state, rows = _run(tmp_path, b, state=state)
+    assert b.option_orders[0][:4] == (h, 2, "sell", "sell_to_close")
+    assert any("BROKEN" in r["note"] for r in rows)
+    assert b.spread_orders == []
+
+
+def test_options_exception_does_not_break_stock_session(tmp_path):
+    b = SessBroker()
+    b.get_option_positions = _raise(RuntimeError("opt down"))
+    rows = _session(tmp_path, b, "late_morning")
+    assert b.equity_orders                                  # stocks still traded
+    err = [r for r in rows if r["side"] == "error"]
+    assert err and err[0]["strategy"] == "OPT"
+    assert (tmp_path / "s.json").exists()
+
+
+def test_stock_exception_does_not_skip_options_closes(tmp_path):
+    import pytest
+    p = tmp_path / "s.json"
+    p.write_text(json.dumps({"peak_equity": 100_000.0, "day": "2026-11-10",
+                             "day_start_equity": 100_000.0, "killed": False,
+                             "ran": [], "stopped": {},
+                             "options": {"spreads": {"x": _open_spread(credit=2.40)}}}))
+    b = SessBroker(positions=_legs_pos(), quotes=_close_quotes(1.15, 1.25, 0.0, 0.10))
+    b.submit_order = _raise(RuntimeError("stock order failed"))
+    with pytest.raises(RuntimeError):
+        _session(tmp_path, b, "late_morning")
+    assert b.spread_orders and b.spread_orders[0][3].endswith("O2:x:close")
+    assert load_state(p)["options"]["spreads"]["x"]["status"] == "pending_close"

@@ -112,65 +112,66 @@ def run_session(
     if not dry_run:
         save_state(state_path, state)  # session key persisted before any order
 
-    for sym, w in weights.items():
-        is_crypto = classes[sym] == "crypto"
-        if not is_crypto and not market_open:
-            continue
-        price = prices.get(sym)
-        if not price:
-            continue
-        if sym in stopped and w > 0:
-            log(sym, "skip", 0, price, note="stopped out, waiting for signal reset")
-            continue
-        pos = positions.get(_norm(sym))
-        held_val = pos.market_value if pos else 0.0
-        delta = w * acct.equity - held_val
-        if abs(delta) < limits.min_order_usd:
-            continue
-        side = "buy" if delta > 0 else "sell"
-        verdict = None
-        if side == "buy":
-            if not allowed:
-                log(sym, "skip", 0, price, note=why)
+    try:  # options closes/stops must run even if a stock order raises
+        for sym, w in weights.items():
+            is_crypto = classes[sym] == "crypto"
+            if not is_crypto and not market_open:
                 continue
-            verdict = gate(sym)
-            if verdict.action == "veto":
-                log(sym, "skip", 0, price, verdict, "news veto")
+            price = prices.get(sym)
+            if not price:
                 continue
-            if verdict.action == "reduce":
-                delta *= 0.5
-        if side == "sell" and w == 0.0 and pos:
-            qty = pos.qty
-        else:
-            qty = abs(delta) / price
-            qty = round(qty, 6) if is_crypto else int(qty)
-            if side == "sell" and pos:
-                qty = min(qty, pos.qty)
-        if qty <= 0:
-            continue
-        order_id = ""
+            if sym in stopped and w > 0:
+                log(sym, "skip", 0, price, note="stopped out, waiting for signal reset")
+                continue
+            pos = positions.get(_norm(sym))
+            held_val = pos.market_value if pos else 0.0
+            delta = w * acct.equity - held_val
+            if abs(delta) < limits.min_order_usd:
+                continue
+            side = "buy" if delta > 0 else "sell"
+            verdict = None
+            if side == "buy":
+                if not allowed:
+                    log(sym, "skip", 0, price, note=why)
+                    continue
+                verdict = gate(sym)
+                if verdict.action == "veto":
+                    log(sym, "skip", 0, price, verdict, "news veto")
+                    continue
+                if verdict.action == "reduce":
+                    delta *= 0.5
+            if side == "sell" and w == 0.0 and pos:
+                qty = pos.qty
+            else:
+                qty = abs(delta) / price
+                qty = round(qty, 6) if is_crypto else int(qty)
+                if side == "sell" and pos:
+                    qty = min(qty, pos.qty)
+            if qty <= 0:
+                continue
+            order_id = ""
+            if not dry_run:
+                res = broker.submit_order(sym, qty, side,
+                                          time_in_force="gtc" if is_crypto else "day",
+                                          client_order_id=f"{key}:{_norm(sym)}:{side}")
+                order_id = res.order_id
+            log(sym, side, qty, price, verdict, notes.get(sym, ""), order_id)
+    finally:
+        if options and name == "late_morning":
+            from src.intraday.options_session import run_options
+            try:
+                run_options(
+                    key=key, session=name, broker=broker, state=state,
+                    equity=acct.equity, closes=closes, registry=registry, gate=gate,
+                    prices=prices, now_utc=now_utc, allowed=allowed, why=why,
+                    market_open=market_open, dry_run=dry_run, state_path=state_path,
+                    equity_positions=positions, emit=log,
+                )
+            except Exception as exc:  # noqa: BLE001 - options must not break the session
+                logger.exception("options step failed")
+                log("OPTIONS", "error", 0, 0.0, note=f"options step failed: {exc}"[:200],
+                    strategy="OPT")
+
         if not dry_run:
-            res = broker.submit_order(sym, qty, side,
-                                      time_in_force="gtc" if is_crypto else "day",
-                                      client_order_id=f"{key}:{_norm(sym)}:{side}")
-            order_id = res.order_id
-        log(sym, side, qty, price, verdict, notes.get(sym, ""), order_id)
-
-    if options and name == "late_morning":
-        from src.intraday.options_session import run_options
-        try:
-            run_options(
-                key=key, session=name, broker=broker, state=state,
-                equity=acct.equity, closes=closes, registry=registry, gate=gate,
-                prices=prices, now_utc=now_utc, allowed=allowed, why=why,
-                market_open=market_open, dry_run=dry_run, state_path=state_path,
-                equity_positions=positions, emit=log,
-            )
-        except Exception as exc:  # noqa: BLE001 - options must not break the session
-            logger.exception("options step failed")
-            log("OPTIONS", "error", 0, 0.0, note=f"options step failed: {exc}"[:200],
-                strategy="O2")
-
-    if not dry_run:
-        save_state(state_path, state)
+            save_state(state_path, state)
     return rows
