@@ -898,3 +898,9 @@ Code: `src/round2.py`, `src/construction.py`, `scripts/run_round2.py` (bias test
 - **H14 ERC/HRP: NOT SUPPORTED.** ERC beat equal weight in 8/9 selections in train but 2/9 in validation; HRP 7/9 then 5/9 (6 needed). Risk-parity sizing cut drawdown (primary max drawdown -20% ERC / -17% HRP vs -25%) but gave up return; Sharpe about equal (0.857 / 0.874 vs 0.859).
 - **H12 diagnostic: rejected by the rule, borderline.** Median validation cash-drag share 0.48 (threshold 0.5): cash drag explains about half the H4 validation shortfall, not clearly a majority; median timing value -0.13 in validation vs +0.06 in train.
 - **Outcome:** no candidate frozen; one-touch test not run; test window untouched. Live book unchanged. Every protective overlay improved train and failed validation.
+
+## 2026-11-10: H1 daily run switched OFF (user decision)
+- User asked to stop H1 and run the new multi-session trader on the **same** Alpaca paper account.
+- Windows task `PaperTradingDailyRun` disabled. H1 was a forward test of a rejected hypothesis; this is a dated, logged decision, not a reaction to losses.
+- H1 positions left in the account at switch-off: IWM, QQQ, SPY, XLK, XLV, plus one SPY put (SPY261127P00720000). The new bot manages only its own registry symbols; IWM and the put are unmanaged until the user decides.
+- H1 history up to this date stays valid as its own record.
