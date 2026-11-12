@@ -5,9 +5,9 @@ on:
     # Fires at both the EDT and EST UTC hours; scripts/run_session.py only acts
     # when real Eastern time is within 25 min after a session time.
     - cron: "45 13,14 * * 1-5"   # open 09:45 ET
-    - cron: "30 15,16 * * 1-5"   # late morning 11:30 ET
-    - cron: "0 18,19 * * 1-5"    # afternoon 14:00 ET
-    - cron: "45 19,20 * * 1-5"   # pre-close 15:45 ET
+    - cron: "30 14,15 * * 1-5"   # mid morning 10:30 ET
+    - cron: "15 15,16 * * 1-5"   # late morning 11:15 ET (options)
+    - cron: "45 15,16 * * 1-5"   # noon 11:45 ET
   workflow_dispatch:
     inputs:
       execute:

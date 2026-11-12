@@ -919,3 +919,6 @@ Code: `src/round2.py`, `src/construction.py`, `scripts/run_round2.py` (bias test
 ## 2026-11-10: H1 leftovers closed (user decision)
 - Sell IWM x57 (market, day) and sell-to-close SPY261127P00720000 x2 (limit 2.76, day) submitted after hours; both queued for the open. Order ids: 62f1eade..., 42ae91a0....
 - Reason: remove H1 leftovers so the session trader's record is clean. Not a reaction to a losing day.
+
+## 2026-11-12 - session times moved
+GitHub cron missed all slots on 2026-11-10. Sessions moved to 09:45, 10:30, 11:15 (options), 11:45 ET so all fall 20:15-22:15 IST (owner asleep 23:00-08:00 IST). Names: open, mid_morning, late_morning, noon. Strategy rules unchanged; later-day positions are no longer reviewed (stops only checked at these sessions). Local Windows tasks added as a backup trigger.

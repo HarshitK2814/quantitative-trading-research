@@ -1,4 +1,4 @@
-"""Five daily trading sessions, defined in US Eastern time (DST-safe)."""
+"""Four daily trading sessions before 12:00 ET (user asleep 23:00-08:00 IST); US Eastern, DST-safe."""
 
 from __future__ import annotations
 
@@ -10,10 +10,9 @@ ET = ZoneInfo("America/New_York")
 #: name -> (hour, minute) Eastern.
 SESSIONS: dict[str, tuple[int, int]] = {
     "open": (9, 45),
-    "late_morning": (11, 30),
-    "afternoon": (14, 0),
-    "pre_close": (15, 45),
-    "evening_crypto": (20, 0),
+    "mid_morning": (10, 30),
+    "late_morning": (11, 15),
+    "noon": (11, 45),
 }
 
 
