@@ -5,8 +5,12 @@
   "killed": false,
   "ran": [
     "2026-11-13:open",
-    "2026-11-13:mid_morning"
+    "2026-11-13:mid_morning",
+    "2026-11-13:late_morning"
   ],
   "stopped": {},
-  "options": {}
+  "options": {
+    "hedges": {},
+    "spreads": {}
+  }
 }
