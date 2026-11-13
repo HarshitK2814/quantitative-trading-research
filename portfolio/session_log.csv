@@ -10,3 +10,7 @@ ts,session,symbol,strategy,side,qty,price,news_action,news_reason,note,dry_run,o
 2026-11-13T14:45:09.623204+00:00,open,XLF,S1,skip,0,58.685,veto,gate unavailable,news veto,False,
 2026-11-13T14:45:09.623204+00:00,open,XLE,S1,skip,0,64.175,veto,gate unavailable,news veto,False,
 2026-11-13T14:45:09.623204+00:00,open,NVDA,S2,skip,0,162.755,veto,gate unavailable,news veto,False,
+2026-11-13T15:30:04.478756+00:00,mid_morning,QQQ,S1,skip,0,675.24,veto,gate unavailable,news veto,False,
+2026-11-13T15:30:04.478756+00:00,mid_morning,XLF,S1,skip,0,58.395,veto,gate unavailable,news veto,False,
+2026-11-13T15:30:04.478756+00:00,mid_morning,XLE,S1,skip,0,64.57,veto,gate unavailable,news veto,False,
+2026-11-13T15:30:04.478756+00:00,mid_morning,NVDA,S2,skip,0,160.325,veto,gate unavailable,news veto,False,
