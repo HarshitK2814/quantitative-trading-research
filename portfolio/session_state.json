@@ -4,7 +4,8 @@
   "day_start_equity": 97474.22,
   "killed": false,
   "ran": [
-    "2026-11-16:open"
+    "2026-11-16:open",
+    "2026-11-16:mid_morning"
   ],
   "stopped": {},
   "options": {
