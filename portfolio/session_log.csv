@@ -93,3 +93,8 @@ ts,session,symbol,strategy,side,qty,price,news_action,news_reason,note,dry_run,o
 2026-11-19T16:15:03.819976+00:00,late_morning,SPY,O1,skip,0,0.0,,,hedge: no contract or exposure 9714 < one contract,False,
 2026-11-19T16:15:03.819976+00:00,late_morning,SPY,O2,skip,0,0.0,veto,gate unavailable,spread: news gate veto,False,
 2026-11-19T16:15:03.819976+00:00,late_morning,QQQ,O2,skip,0,0.0,,,spread: S1 trend not long,False,
+2026-11-19T16:45:04.474420+00:00,noon,XLF,S1,skip,0,55.9,veto,gate unavailable,news veto,False,
+2026-11-19T16:45:04.474420+00:00,noon,XLE,S1,skip,0,61.43,veto,gate unavailable,news veto,False,
+2026-11-19T16:45:04.474420+00:00,noon,XLV,S1,skip,0,178.37,veto,gate unavailable,news veto,False,
+2026-11-19T16:45:04.474420+00:00,noon,MSFT,S2,skip,0,513.625,veto,gate unavailable,news veto,False,
+2026-11-19T16:45:04.474420+00:00,noon,NVDA,S2,skip,0,152.625,veto,gate unavailable,news veto,False,
