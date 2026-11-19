@@ -80,3 +80,8 @@ ts,session,symbol,strategy,side,qty,price,news_action,news_reason,note,dry_run,o
 2026-11-19T14:45:09.619688+00:00,open,XLV,S1,skip,0,179.23,veto,gate unavailable,news veto,False,
 2026-11-19T14:45:09.619688+00:00,open,MSFT,S2,skip,0,524.04,veto,gate unavailable,news veto,False,
 2026-11-19T14:45:09.619688+00:00,open,NVDA,S2,skip,0,157.96,veto,gate unavailable,news veto,False,
+2026-11-19T15:30:03.560171+00:00,mid_morning,XLF,S1,skip,0,56.07,veto,gate unavailable,news veto,False,
+2026-11-19T15:30:03.560171+00:00,mid_morning,XLE,S1,skip,0,61.23,veto,gate unavailable,news veto,False,
+2026-11-19T15:30:03.560171+00:00,mid_morning,XLV,S1,skip,0,178.915,veto,gate unavailable,news veto,False,
+2026-11-19T15:30:03.560171+00:00,mid_morning,MSFT,S2,skip,0,517.91,veto,gate unavailable,news veto,False,
+2026-11-19T15:30:03.560171+00:00,mid_morning,NVDA,S2,skip,0,153.32,veto,gate unavailable,news veto,False,
