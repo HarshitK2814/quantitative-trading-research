@@ -68,6 +68,21 @@ def plan_orders(target, positions, prices, equity, stale, owned=None) -> list:
     return orders
 
 
+SNAP_COLS = ["date", "ts_utc", "equity", "spy_close", "scale", "killed",
+             "gross_target", "n_targets", "n_orders", "n_failed"]
+
+
+def append_snapshot(path: Path, row: dict) -> None:
+    path = Path(path)
+    new = not path.exists()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", newline="") as fh:
+        wr = csv.writer(fh)
+        if new:
+            wr.writerow(SNAP_COLS)
+        wr.writerow([row[c] for c in SNAP_COLS])
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--execute", action="store_true")
@@ -110,6 +125,7 @@ def main():
     print(f"equity {acct.equity:,.2f} scale {scale} targets {len(target)} "
           f"gross {gross:.3f} max|w| {mx:.3f} orders {len(orders)}")
     ts = datetime.now(UTC).isoformat()
+    n_sent = n_failed = 0
     for _, sym, side, qty, px in sorted(orders):      # sells first
         is_crypto = "/" in sym
         if args.execute and not is_crypto and not market_open:
@@ -124,7 +140,9 @@ def main():
                 oid = res.order_id
             except Exception as exc:  # noqa: BLE001 - log and continue
                 print("ORDER FAILED", side, qty, sym, str(exc)[:150])
+                n_failed += 1
                 continue
+            n_sent += 1
         print(side, qty, sym, f"~{px:.2f}", oid or ("(dry run)" + ("" if market_open or is_crypto else ", market closed")))
         if args.execute:
             new = not LOG.exists()
@@ -137,6 +155,11 @@ def main():
         state["owned"] = sorted(s for s in owned if abs(target.get(s, 0.0)) > 0
                                 or s.replace("/", "") in positions)
         STATE.write_text(json.dumps(state, indent=2))
+        spy = float(close["SPY"].dropna().iloc[-1]) if "SPY" in close.columns else float("nan")
+        append_snapshot(Path("portfolio/ensemble_snapshot.csv"), dict(
+            date=str(today), ts_utc=ts, equity=float(acct.equity), spy_close=spy,
+            scale=scale, killed=state.get("killed", False), gross_target=gross,
+            n_targets=len(target), n_orders=n_sent, n_failed=n_failed))
 
 
 if __name__ == "__main__":

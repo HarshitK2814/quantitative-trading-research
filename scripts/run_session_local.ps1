@@ -10,9 +10,12 @@ cmd /c "git stash -q >> $log 2>&1"
 cmd /c "git pull -q --rebase origin main >> $log 2>&1"
 cmd /c "git stash pop -q >> $log 2>&1"
 $h = (Get-Date).ToUniversalTime().AddHours(-5).Hour  # approx ET; open session window only
-if ($h -eq 9) { cmd /c "`"$py`" scripts/run_ensemble.py --execute >> $log 2>&1" }
+if ($h -eq 9) {
+  cmd /c "`"$py`" scripts/run_ensemble.py --execute >> $log 2>&1"
+  cmd /c "`"$py`" scripts/build_dashboard.py >> $log 2>&1"
+}
 cmd /c "`"$py`" scripts/run_session.py --execute >> $log 2>&1"
-cmd /c "git add portfolio/session_log.csv portfolio/session_state.json portfolio/ensemble_state.json portfolio/ensemble_trades.csv >> $log 2>&1"
+cmd /c "git add portfolio/session_log.csv portfolio/session_state.json portfolio/ensemble_state.json portfolio/ensemble_trades.csv portfolio/ensemble_snapshot.csv docs/index.html >> $log 2>&1"
 cmd /c "git diff --cached --quiet"
 if ($LASTEXITCODE -ne 0) {
   cmd /c "git commit -q -m `"session: local trigger`" >> $log 2>&1"
