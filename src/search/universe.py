@@ -58,7 +58,7 @@ def load_panel(tickers, start="2007-01-01", cache_dir=Path("data/search")):
     cpath, vpath = cache_dir / "close.parquet", cache_dir / "volume.parquet"
     today = pd.Timestamp.today().normalize()
     if cpath.exists() and (today - pd.Timestamp(cpath.stat().st_mtime, unit="s")).days < 1:
-        return pd.read_parquet(cpath), pd.read_parquet(vpath)
+        return _equity_days(pd.read_parquet(cpath), pd.read_parquet(vpath))
     closes, vols = [], []
     for i in range(0, len(tickers), 100):
         d = yf.download(tickers[i:i + 100], start=start, auto_adjust=True,
@@ -71,6 +71,15 @@ def load_panel(tickers, start="2007-01-01", cache_dir=Path("data/search")):
     vol = vol.loc[:, ~vol.columns.duplicated()]
     close.to_parquet(cpath)
     vol.to_parquet(vpath)
+    return _equity_days(close, vol)
+
+
+def _equity_days(close, vol):
+    """Keep US equity trading days only. Crypto trades weekends; those rows would
+    blank Monday stock returns. Crypto's weekend move rolls into Monday instead."""
+    if "SPY" in close.columns:
+        keep = close["SPY"].notna()
+        close, vol = close[keep], vol.reindex(close.index)[keep]
     return close, vol
 
 
