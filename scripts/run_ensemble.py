@@ -32,6 +32,42 @@ def owned_symbols() -> set[str]:
     return set(st.get("owned", []))
 
 
+def is_option_symbol(sym: str) -> bool:
+    return len(sym) > 10 and any(c.isdigit() for c in sym)
+
+
+def plan_orders(target, positions, prices, equity, stale, owned=None) -> list:
+    """Pure order planner. Returns (sell_first, sym, side, qty, px) tuples.
+    stale symbols (missing last bar) are held; option symbols are never touched."""
+    owned = set(owned if owned is not None else target) | set(target)
+    orders = []
+    for sym in sorted(owned):
+        if is_option_symbol(sym):
+            continue
+        if sym in stale:
+            print("stale, hold", sym)
+            continue
+        key = sym.replace("/", "")
+        held = positions.get(key)
+        px = prices.get(sym) or (held.current_price if held else None)
+        if not px:
+            continue
+        tgt = target.get(sym, 0.0)
+        if tgt == 0 and held is not None and held.qty:
+            if held.qty > 0:
+                orders.append((0, sym, "sell", abs(held.qty), px))
+            continue
+        held_val = held.market_value if held else 0.0
+        delta = tgt * equity - held_val
+        if abs(delta) < MIN_ORDER:
+            continue
+        side = "buy" if delta > 0 else "sell"
+        qty = round(abs(delta) / px, 6) if "/" in sym else int(abs(delta) / px)
+        if qty > 0:
+            orders.append((0 if side == "sell" else 1, sym, side, qty, px))
+    return orders
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--execute", action="store_true")
@@ -63,24 +99,12 @@ def main():
         target = {}
 
     positions = {p.symbol: p for p in broker.get_positions().values()}
-    owned = set(state.get("owned", [])) | set(target)
+    owned = {x for x in set(state.get("owned", [])) | set(target) if not is_option_symbol(x)}
     prices = broker.get_last_prices(sorted(s for s in owned if "/" not in s))
     market_open = broker.is_market_open()
-    orders = []
-    for sym in sorted(owned):
-        px = prices.get(sym) or (positions[sym.replace("/", "")].current_price
-                                 if sym.replace("/", "") in positions else None)
-        if not px:
-            continue
-        held = positions.get(sym.replace("/", ""))
-        held_val = held.market_value if held else 0.0
-        delta = target.get(sym, 0.0) * acct.equity - held_val
-        if abs(delta) < MIN_ORDER:
-            continue
-        side = "buy" if delta > 0 else "sell"
-        qty = round(abs(delta) / px, 6) if "/" in sym else int(abs(delta) / px)
-        if qty > 0:
-            orders.append((0 if side == "sell" else 1, sym, side, qty, px))
+    stale = {c for c in close.columns if close[c].iloc[-1] != close[c].iloc[-1]}
+    stale = {to_alpaca(c) for c in stale}
+    orders = plan_orders(target, positions, prices, acct.equity, stale, owned)
     gross = sum(abs(v) for v in target.values())
     mx = max((abs(v) for v in target.values()), default=0.0)
     print(f"equity {acct.equity:,.2f} scale {scale} targets {len(target)} "
@@ -93,10 +117,14 @@ def main():
             continue
         oid = ""
         if args.execute:
-            res = broker.submit_order(sym, qty, side,
-                                      time_in_force="gtc" if is_crypto else "day",
-                                      client_order_id=f"ens:{today}:{sym.replace('/', '')}:{side}")
-            oid = res.order_id
+            try:
+                res = broker.submit_order(sym, qty, side,
+                                          time_in_force="gtc" if is_crypto else "day",
+                                          client_order_id=f"ens:{today}:{sym.replace('/', '')}:{side}")
+                oid = res.order_id
+            except Exception as exc:  # noqa: BLE001 - log and continue
+                print("ORDER FAILED", side, qty, sym, str(exc)[:150])
+                continue
         print(side, qty, sym, f"~{px:.2f}", oid or ("(dry run)" + ("" if market_open or is_crypto else ", market closed")))
         if args.execute:
             new = not LOG.exists()
