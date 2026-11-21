@@ -14,11 +14,14 @@ put credit spreads; forward test, see research/hypotheses_sessions.md).
 from __future__ import annotations
 
 import argparse
+import dataclasses
+import json
 import logging
 import os
 from datetime import UTC, datetime
 from pathlib import Path
 
+from scripts.run_ensemble import owned_symbols
 from src.broker import AlpacaPaperBroker
 from src.config import PROJECT_ROOT, load_broker_config
 from src.intraday.groq_gate import review_trade
@@ -50,14 +53,18 @@ def main() -> None:
 
     cfg = load_broker_config()
     broker = AlpacaPaperBroker(cfg)
-    symbols = [s for spec in REGISTRY.values() if spec.active for s in spec.symbols]
-    if not symbols:
+    ens = PROJECT_ROOT / "portfolio" / "ensemble.json"
+    retire = set(json.loads(ens.read_text()).get("retire", [])) if ens.exists() else set()
+    registry = {k: (dataclasses.replace(v, active=False) if k in retire else v)
+                for k, v in REGISTRY.items()}
+    symbols = [s for spec in registry.values() if spec.active for s in spec.symbols]
+    if not symbols and args.no_options:
         print("No active strategies (none passed the gate yet); exiting.")
         return
     stocks = [s for s in symbols if "/" not in s]
     crypto = [s for s in symbols if "/" in s]
 
-    closes = load_daily_closes(symbols)
+    closes = load_daily_closes(sorted(set(symbols) | {"SPY", "QQQ"}))  # SPY/QQQ: O1/O2 underlyings
     prices = broker.get_last_prices(stocks) if stocks else {}
     prices |= crypto_last_prices(crypto, cfg.api_key_id, cfg.api_secret_key)
     headlines = fetch_headlines(symbols)
@@ -65,9 +72,10 @@ def main() -> None:
 
     rows = run_session(
         name=name, broker=broker, closes=closes, now_utc=now, limits=SessionLimits(),
-        state_path=Path(STATE), log_path=Path(LOG), registry=REGISTRY,
+        state_path=Path(STATE), log_path=Path(LOG), registry=registry,
         gate=lambda sym: review_trade(sym, headlines.get(sym), groq_key),
         prices=prices, dry_run=not args.execute, options=not args.no_options,
+        exclude=owned_symbols(),
     )
     for r in rows:
         print(r["session"], r["symbol"], r["side"], r["qty"], r["note"], r["news_action"])
