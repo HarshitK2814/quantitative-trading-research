@@ -311,6 +311,14 @@ def test_hedge_opens_capped_at_1pct_premium(tmp_path):
     assert state["options"]["hedges"][sym]["cost_basis"] <= 1000.0
 
 
+def test_hedge_exposure_counts_all_equity_not_just_registry(tmp_path):
+    b = OptBroker(quotes={k: v for k, v in chain_quotes().items() if k.startswith("SPY")})
+    eq = {"AAPL": Position("AAPL", 1000, 100_000, 100, 100, 0),
+          occ("SPY", 95): Position(occ("SPY", 95), 5, 5_000_000, 1000, 1000, 0)}
+    _run(tmp_path, b, eq_pos=eq, closes={"SPY": DOWN, "QQQ": DOWN})
+    assert len(b.option_orders) == 1 and b.option_orders[0][1] == 4   # option MV ignored
+
+
 def test_hedge_not_opened_when_killed(tmp_path):
     b = OptBroker()
     eq = {"SPY": Position("SPY", 1000, 100_000, 100, 100, 0)}

@@ -46,13 +46,13 @@ def _spec(symbols=("A",), cls="etf", active=True):
                               lambda c: trend_signal(c, 50, 200), active)}
 
 
-def _run(tmp_path, broker, closes, registry, gate=None, dry_run=False, prices=None):
+def _run(tmp_path, broker, closes, registry, gate=None, dry_run=False, prices=None, **kw):
     return run_session(
         name="open", broker=broker, closes=closes, now_utc=NOW,
         limits=SessionLimits(), state_path=tmp_path / "s.json",
         log_path=tmp_path / "log.csv", registry=registry,
         gate=gate or (lambda s: Verdict("ok", "")),
-        prices=prices or {"A": 100.0}, dry_run=dry_run,
+        prices=prices or {"A": 100.0}, dry_run=dry_run, **kw,
     )
 
 
@@ -284,3 +284,10 @@ def test_partial_sell_when_target_below_held(tmp_path):
     b = FakeBroker(positions=held)
     _run(tmp_path, b, {"A": UP}, _spec())
     assert b.orders == [("A", 30, "sell", "day")]
+
+
+def test_excluded_symbols_are_not_traded(tmp_path):
+    b = FakeBroker()
+    rows = _run(tmp_path, b, {"A": UP}, _spec(), exclude={"A"})
+    assert b.orders == []
+    assert not [r for r in rows if r["symbol"] == "A" and r["side"] in ("buy", "sell")]

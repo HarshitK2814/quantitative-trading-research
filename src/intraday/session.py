@@ -46,6 +46,7 @@ def run_session(
     *, name, broker, closes, now_utc: datetime, limits: SessionLimits,
     state_path: Path, log_path: Path, registry, gate, prices: dict[str, float],
     dry_run: bool, options: bool = False,
+    exclude: frozenset[str] | set[str] = frozenset(),
 ) -> list[dict]:
     """Run one session and return the log rows. Only registry symbols are touched.
 
@@ -113,7 +114,10 @@ def run_session(
         save_state(state_path, state)  # session key persisted before any order
 
     try:  # options closes/stops must run even if a stock order raises
+        skip = {_norm(e) for e in exclude}  # symbols owned by the ensemble
         for sym, w in weights.items():
+            if _norm(sym) in skip:
+                continue
             is_crypto = classes[sym] == "crypto"
             if not is_crypto and not market_open:
                 continue
