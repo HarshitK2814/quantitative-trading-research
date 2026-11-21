@@ -63,7 +63,8 @@ Mix: inverse-vol (63d, lagged), then scaled to a **10% vol target**, gross expos
 
 | | Train Sharpe | Valid Sharpe | Holdout Sharpe | Holdout return | Holdout max DD |
 |---|---|---|---|---|---|
-| Ensemble (10% vol) | 0.84 | 1.10 | 0.72 | +12.5% | -9.8% |
+| Ensemble (10% vol, deployed: std floor 0.003) | 0.79 | 0.95 | 0.78 | +13.2% | -9.5% |
+| Ensemble (10% vol, before floor fix) | 0.84 | 1.10 | 0.72 | +12.5% | -9.8% |
 | SPY | 0.55 | 0.85 | 0.64 | +20.0% | -18.8% |
 | H1 (retired) | 0.61 | 0.67 | 0.29 | +7.4% | -26.7% |
 
