@@ -2,14 +2,14 @@ import pandas as pd
 from src.search.universe import sp500_membership, top_liquid
 
 
-def _fake_html(url):
-    cur = pd.DataFrame({"Symbol": ["AAA", "BRK.B"]})
-    ch = pd.DataFrame([["2020-06-01", "AAA", "A co", "OLD", "Old co", "x"]])
-    return [cur, ch]
+def _fake_iv():
+    return pd.DataFrame({"ticker": ["AAA", "OLD", "BRK.B"],
+                         "start_date": ["2020-06-01", "1990-01-01", "1990-01-01"],
+                         "end_date": [None, "2020-06-01", None]})
 
 
 def test_membership_reconstructs_history():
-    m = sp500_membership("2020-05-25", read_html=_fake_html, today="2020-06-05")
+    m = sp500_membership("2020-05-25", fetch=_fake_iv, today="2020-06-05")
     assert m.loc["2020-05-29", "OLD"] and not m.loc["2020-05-29", "AAA"]
     assert m.loc["2020-06-01", "AAA"] and not m.loc["2020-06-01", "OLD"]
     assert m["BRK-B"].all()
