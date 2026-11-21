@@ -110,11 +110,42 @@ def _table(frame: pd.DataFrame, columns: dict[str, str]) -> str:
             f"<tbody>{''.join(rows)}</tbody></table></div>")
 
 
+def ensemble_section(snap: pd.DataFrame) -> str:
+    """HTML block for the live ensemble: return vs SPY, drawdown, kill switch."""
+    if snap is None or snap.empty:
+        return '<h2>Live ensemble (from 2026-11-23)</h2><p class="muted">Ensemble not started yet.</p>'
+    eq = [float(v) for v in snap["equity"]]
+    spy = [float(v) for v in snap["spy_close"]]
+    ens_r = eq[-1] / eq[0] - 1
+    spy_r = spy[-1] / spy[0] - 1
+    excess = (ens_r - spy_r) * 100
+    dd = eq[-1] / max(eq) - 1
+    last = snap.iloc[-1]
+    killed = str(last["killed"]).lower() == "true"
+    return (
+        '<h2>Live ensemble (from 2026-11-23)</h2>'
+        '<div class="grid">'
+        f'<div class="card"><div class="k">Ensemble return</div><div class="v">{ens_r:+.2%}</div></div>'
+        f'<div class="card"><div class="k">SPY return</div><div class="v">{spy_r:+.2%}</div></div>'
+        f'<div class="card"><div class="k">Excess vs SPY</div><div class="v">{excess:+.2f} pp</div></div>'
+        f'<div class="card"><div class="k">Drawdown from peak</div><div class="v">{dd:.2%}</div></div>'
+        f'<div class="card"><div class="k">Kill switch</div><div class="v">{"TRIGGERED" if killed else "off"}</div></div>'
+        f'<div class="card"><div class="k">Gross target / positions</div>'
+        f'<div class="v">{float(last["gross_target"]):.2f} / {int(last["n_targets"])}</div></div>'
+        '</div>'
+        + _sparkline(eq)
+    )
+
+
 def build() -> str:
     """Assemble the full page from the committed journals."""
     snaps = load_snapshots()
     trades = load_trades(deduplicate=True)
     hedges = load_hedge_trades()
+
+    ens_path = PROJECT_ROOT / "portfolio" / "ensemble_snapshot.csv"
+    ens_snap = pd.read_csv(ens_path).drop_duplicates("date", keep="last") if ens_path.exists() else pd.DataFrame()
+    ens_html = ensemble_section(ens_snap)
 
     commit = _git("rev-parse", "--short", "HEAD") or "unknown"
     generated = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
@@ -264,6 +295,8 @@ performance claim.</div>
   <div class="card"><div class="k">Started</div>
     <div class="v" style="font-size:1rem">{first_date}</div></div>
 </div>
+
+{ens_html}
 
 <h2>Equity curve</h2>
 {_sparkline(curve)}
