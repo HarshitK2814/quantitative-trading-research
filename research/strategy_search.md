@@ -69,3 +69,15 @@ Mix: inverse-vol (63d, lagged), then scaled to a **10% vol target**, gross expos
 | H1 (retired) | 0.61 | 0.67 | 0.29 | +7.4% | -26.7% |
 
 **Disclosure:** vol targets 0.08, 0.12 and 0.15 were also viewed on the holdout (Sharpe 0.82, 0.64, 0.62). 0.10 was kept as the round default, not the best. The holdout has therefore been touched more than once, and these numbers are optimistic. The live paper record from 2026-11-23 is the real test.
+
+
+## Phase 2 overlays tested (2026-11-21, rules fixed before running)
+Rule: an overlay is adopted only if it improves BOTH train and validation Sharpe. The holdout is not used to decide, because it has already been viewed.
+
+| | Train | Valid | Holdout | Verdict |
+|---|---|---|---|---|
+| Live ensemble | 0.79 | 0.95 | 0.78 | baseline |
+| + VIX/VIX3M > 1 → half size | 0.82 | 0.88 | 0.96 | **Rejected** (valid worse) |
+| + Cboe PutWrite (^PUT) sleeve, inverse-vol | 0.64 | 1.17 | 0.67 | **Rejected** (train worse) |
+
+The VIX filter's holdout gain is noted, but it is not acted on, since acting on it would be selecting on the holdout. Intraday (30-min) was dropped: the session schedule ends by 12:00 ET.
