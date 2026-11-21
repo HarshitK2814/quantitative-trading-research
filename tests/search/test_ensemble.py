@@ -50,3 +50,11 @@ def test_kill_switch_levels_and_latch():
 
 def test_symbol_mapping():
     assert to_alpaca("BRK-B") == "BRK.B" and to_alpaca("BTC-USD") == "BTC/USD"
+
+
+def test_zero_vol_sleeve_does_not_zero_the_mix():
+    w, r, close, bps = _setup()
+    r["lo"] = r["lo"] * 0.0
+    ew = ensemble_weights(w, r, close, bps)
+    assert np.isfinite(ew.values).all()
+    assert ew.iloc[-50:].abs().sum(axis=1).max() > 0.1

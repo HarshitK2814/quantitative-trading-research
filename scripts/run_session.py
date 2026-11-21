@@ -65,7 +65,7 @@ def main() -> None:
     crypto = [s for s in symbols if "/" in s]
 
     closes = load_daily_closes(sorted(set(symbols) | {"SPY", "QQQ"}))  # SPY/QQQ: O1/O2 underlyings
-    prices = broker.get_last_prices(stocks) if stocks else {}
+    prices = broker.get_last_prices(sorted(set(stocks) | {"SPY", "QQQ"}))
     prices |= crypto_last_prices(crypto, cfg.api_key_id, cfg.api_secret_key)
     headlines = fetch_headlines(symbols)
     groq_key = os.environ.get("GROQ_API_KEY", "")

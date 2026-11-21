@@ -17,7 +17,7 @@ def ensemble_weights(sleeve_w: dict, sleeve_r: dict, close: pd.DataFrame, bps: p
     to vol_target using the mix's own trailing 63d vol, never above 100% gross."""
     names = list(sleeve_w)
     R = pd.DataFrame(sleeve_r)
-    iv = 1 / R.rolling(63).std().shift(1)
+    iv = 1 / R.rolling(63).std().clip(lower=0.003).shift(1)
     a = iv.div(iv.sum(axis=1), axis=0).fillna(0.0)
     cols = sorted(set().union(*[w.columns for w in sleeve_w.values()]))
     comb = sum(sleeve_w[k].reindex(columns=cols, fill_value=0.0).mul(a[k], axis=0) for k in names)

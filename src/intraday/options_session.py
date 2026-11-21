@@ -271,9 +271,9 @@ def _open_hedge(broker, opts, equity, prices, today, now_utc, key, registry,
     hedges = opts["hedges"]
     if any(h["status"] != "pending_close" for h in hedges.values()):
         return  # already hedged (or an order pending/unknown)
-    syms = {s for spec in registry.values() if spec.active
-            and spec.asset_class != "crypto" for s in spec.symbols}
-    exposure = sum(p.market_value for s, p in equity_positions.items() if s in syms)
+    # the ensemble owns the equity book: hedge ALL non-option, non-crypto positions
+    exposure = sum(p.market_value for s, p in equity_positions.items()
+                   if not (len(s) > 10 and any(c.isdigit() for c in s)) and "/" not in s)
     if exposure <= 0:
         return
     und = o.HEDGE_UNDERLYING
