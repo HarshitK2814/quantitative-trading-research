@@ -58,7 +58,7 @@ def test_none_headlines_veto_without_calling_groq():
         raise AssertionError("called")
 
     v = review_trade("AAPL", None, "key", post=must_not_call)
-    assert v.action == "veto" and v.reason == "news unavailable"
+    assert v.action == "reduce" and "news unavailable" in v.reason
 
 
 def test_invalid_action_reason_truncated():
@@ -85,14 +85,14 @@ def test_veto_and_reduce_parsed():
 
 def test_failures_fail_safe_to_veto():
     assert review_trade("AAPL", ["x"], "", post=_groq("{}")).action == "veto"   # no key
-    assert review_trade("AAPL", ["x"], "key", post=_groq("not json")).action == "veto"
+    assert review_trade("AAPL", ["x"], "key", post=_groq("not json")).action == "reduce"
     assert review_trade("AAPL", ["x"], "key",
                         post=_groq(json.dumps({"action": "buy_more"}))).action == "veto"
 
     def boom(*a, **k):
         raise RuntimeError("429")
 
-    assert review_trade("AAPL", ["x"], "key", post=boom).action == "veto"
+    assert review_trade("AAPL", ["x"], "key", post=boom).action == "reduce"  # outage: half size
 
 
 def _fake_yf(monkeypatch, ticker_news, search_news):
@@ -143,3 +143,20 @@ def test_default_both_empty_is_no_news(monkeypatch):
     _fake_yf(monkeypatch, [], [])
     assert fetch_headlines(["AAPL"]) == {"AAPL": []}
 
+
+
+def test_404_model_falls_back_to_next_model():
+    seen = []
+
+    class R:
+        def __init__(s, code): s.status_code = code
+        def raise_for_status(s):
+            if s.status_code >= 400: raise RuntimeError(s.status_code)
+        def json(s): return {"choices": [{"message": {"content": json.dumps({"action": "ok", "reason": "fine"})}}]}
+
+    def post(url, **k):
+        seen.append(k["json"]["model"])
+        return R(404 if len(seen) == 1 else 200)
+
+    assert review_trade("AAPL", ["x"], "key", post=post).action == "ok"
+    assert len(seen) == 2 and seen[0] != seen[1]

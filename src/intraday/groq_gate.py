@@ -11,6 +11,7 @@ import requests
 logger = logging.getLogger(__name__)
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 MODEL = "llama-3.3-70b-versatile"
+FALLBACK_MODELS = ("llama-3.1-8b-instant",)  # tried if MODEL returns 404/400
 _VALID = {"ok", "reduce", "veto"}
 
 PROMPT = (
@@ -36,25 +37,26 @@ def review_trade(
 ) -> Verdict:
     """Ask Groq to review a buy. Any failure returns a veto (fail safe)."""
     if headlines is None:
-        return Verdict("veto", "news unavailable")
+        return Verdict("reduce", "news unavailable: half size")  # outage: smaller, not blocked
     if not headlines:
         return Verdict("ok", "no news")
     if not api_key:
         return Verdict("veto", "GROQ_API_KEY missing")
     try:
-        resp = post(
-            GROQ_URL,
-            headers={"Authorization": f"Bearer {api_key}"},
-            json={
-                "model": MODEL,
-                "temperature": 0,
-                "response_format": {"type": "json_object"},
-                "messages": [{"role": "user", "content": PROMPT.format(
-                    symbol=symbol,
-                    headlines="\n".join(f"- {h}" for h in headlines))}],
-            },
-            timeout=30,
-        )
+        prompt = PROMPT.format(symbol=symbol,
+                               headlines=chr(10).join(f"- {h}" for h in headlines))
+        resp = None
+        for model in (MODEL, *FALLBACK_MODELS):
+            resp = post(
+                GROQ_URL,
+                headers={"Authorization": f"Bearer {api_key}"},
+                json={"model": model, "temperature": 0,
+                      "response_format": {"type": "json_object"},
+                      "messages": [{"role": "user", "content": prompt}]},
+                timeout=30,
+            )
+            if resp.status_code not in (400, 404):
+                break
         resp.raise_for_status()
         data = json.loads(resp.json()["choices"][0]["message"]["content"])
         action = data.get("action")
@@ -63,4 +65,4 @@ def review_trade(
         return Verdict(action, str(data.get("reason", ""))[:200])
     except Exception as exc:
         logger.warning("groq gate failed: %s", exc)
-        return Verdict("veto", "gate unavailable")
+        return Verdict("reduce", "gate unavailable: half size")
