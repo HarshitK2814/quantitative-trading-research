@@ -1,0 +1,2 @@
+date,ts_utc,equity,spy_close,scale,killed,gross_target,n_targets,n_orders,n_failed
+2026-11-23,2026-11-23T14:45:57.567411+00:00,96935.81,689.8099975585938,1.0,False,0.7297743121238685,70,58,0
