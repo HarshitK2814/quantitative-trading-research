@@ -125,3 +125,6 @@ ts,session,symbol,strategy,side,qty,price,news_action,news_reason,note,dry_run,o
 2026-11-23T16:15:05.186056+00:00,late_morning,SPY,O1,skip,0,0.0,,,hedge: no contract or exposure 61103 < one contract,False,
 2026-11-23T16:15:05.186056+00:00,late_morning,SPY,O2,skip,0,0.0,,,spread: S1 trend not long,False,
 2026-11-23T16:15:05.186056+00:00,late_morning,QQQ,O2,skip,0,0.0,,,spread: S1 trend not long,False,
+2026-11-24T16:15:04.383840+00:00,late_morning,SPY,O1,skip,0,0.0,,,hedge: no contract or exposure 53432 < one contract,False,
+2026-11-24T16:15:04.383840+00:00,late_morning,SPY,O2,skip,0,0.0,,,spread: S1 trend not long,False,
+2026-11-24T16:15:04.383840+00:00,late_morning,QQQ,O2,skip,0,0.0,,,spread: S1 trend not long,False,
