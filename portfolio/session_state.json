@@ -1,13 +1,10 @@
 {
   "peak_equity": 97553.09,
-  "day": "2026-11-24",
-  "day_start_equity": 97000.4,
+  "day": "2026-11-25",
+  "day_start_equity": 96503.34,
   "killed": false,
   "ran": [
-    "2026-11-24:open",
-    "2026-11-24:mid_morning",
-    "2026-11-24:late_morning",
-    "2026-11-24:noon"
+    "2026-11-25:open"
   ],
   "stopped": {},
   "options": {
