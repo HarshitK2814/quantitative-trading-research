@@ -28,13 +28,9 @@ on:
     branches: [main]
     paths:
       - "docs/dashboard.html"
+      - "docs/index.html"
       - "scripts/fetch_live_data.py"
       - ".github/workflows/live-dashboard.yml"
-
-permissions:
-  contents: read
-  pages: write
-  id-token: write
 
 # Never let two deploys race; keep the newest.
 concurrency:
@@ -42,15 +38,16 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  publish:
+  build:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
+    permissions:
+      contents: read
+    outputs:
+      artifact_id: ${{ steps.upload.outputs.artifact_id }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
@@ -72,9 +69,38 @@ jobs:
           if [ -f docs/index.html ]; then cp docs/index.html _site/static.html; fi
           ls -la _site
 
-      - uses: actions/upload-pages-artifact@v4
+      - id: upload
+        uses: actions/upload-pages-artifact@v4
         with:
           path: _site
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - name: Wait for the Pages artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_ID: ${{ needs.build.outputs.artifact_id }}
+        run: |
+          test -n "$ARTIFACT_ID"
+          for attempt in {1..6}; do
+            if gh api --method GET "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts" \
+              -f name=github-pages \
+              --jq '.artifacts[] | select(.expired == false) | .id' | grep -Fxq "$ARTIFACT_ID"; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 6 ]; then sleep 5; fi
+          done
+          echo "::error::Pages artifact $ARTIFACT_ID did not become visible for this run."
+          exit 1
 
       - id: deploy
         uses: actions/deploy-pages@v4
